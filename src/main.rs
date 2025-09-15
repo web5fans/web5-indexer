@@ -3,7 +3,7 @@ use crate::{
     config::AppConfig,
     db::{establish_connection, query_count},
     error::AppError,
-    router::{query_did_doc, resolve_handle},
+    router::query_did_doc,
 };
 use actix_cors::Cors;
 use actix_files::NamedFile;
@@ -47,7 +47,7 @@ async fn main() -> Result<(), AppError> {
     let token = CancellationToken::new();
     let pool_for_rolling = pool.clone();
     let mut conn = pool_for_rolling.get().unwrap();
-    let mut ckb_ctx = CkbCtx::init(&mut conn, token);
+    let mut ckb_ctx = CkbCtx::init(&mut conn, token).await;
 
     let task_handle = task::spawn(async move {
         let target_code_hash = H256::from_str(&config.code_hash).unwrap();
@@ -131,7 +131,7 @@ async fn main() -> Result<(), AppError> {
                     .max_age(3600),
             )
             .service(web::resource("/{did}").route(web::get().to(query_did_doc)))
-            .service(web::resource("/resolve-handle/{handle}").route(web::get().to(resolve_handle)))
+            // .service(web::resource("/resolve-handle/{handle}").route(web::get().to(resolve_handle)))
             .service(
                 web::resource("/test").to(|req: HttpRequest| match *req.method() {
                     Method::GET => HttpResponse::Ok(),

@@ -24,6 +24,16 @@ pub fn establish_connection(db_url: String) -> DbPool {
 }
 
 #[tracing::instrument(skip_all)]
+pub fn check_connection(conn: &mut PgConnection) -> bool {
+    DidRecordSchema::did_record
+        .filter(DidRecordSchema::valid.eq(true))
+        .select(models::DidRecord::as_select())
+        .first(conn)
+        .optional()
+        .is_ok()
+}
+
+#[tracing::instrument(skip_all)]
 pub fn query_valid_did_doc(
     conn: &mut PgConnection,
     did: String,
@@ -82,10 +92,7 @@ pub fn query_count(conn: &mut PgConnection) -> Result<i64, AppError> {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn resolve_valid_handle(
-    conn: &mut PgConnection,
-    handle: String,
-) -> Result<String, AppError> {
+pub fn resolve_valid_handle(conn: &mut PgConnection, handle: String) -> Result<String, AppError> {
     DidRecordSchema::did_record
         .filter(DidRecordSchema::handle.eq(handle.clone()))
         .filter(DidRecordSchema::valid.eq(true))
@@ -101,6 +108,7 @@ pub fn insert_record(
     conn: &mut PgConnection,
     did: String,
     handle: String,
+    signing_key: String,
     time_stamp: u64,
     ckb_addr: String,
     tx_hash: String,
@@ -115,6 +123,7 @@ pub fn insert_record(
         .values((
             DidRecordSchema::did.eq(did),
             DidRecordSchema::handle.eq(handle),
+            DidRecordSchema::signingKey.eq(signing_key),
             DidRecordSchema::createdAt.eq(created_at),
             DidRecordSchema::ckbAddress.eq(ckb_addr),
             DidRecordSchema::document.eq(doc_str),
@@ -163,6 +172,7 @@ pub fn delete_record(
     conn: &mut PgConnection,
     did: String,
     handle: String,
+    signing_key: String,
     time_stamp: u64,
     ckb_addr: String,
     tx_hash: String,
@@ -180,6 +190,7 @@ pub fn delete_record(
         .values((
             DidDeleteSchema::did.eq(did),
             DidDeleteSchema::handle.eq(handle),
+            DidDeleteSchema::signingKey.eq(signing_key),
             DidDeleteSchema::deletedAt.eq(deleted_at),
             DidDeleteSchema::ckbAddress.eq(ckb_addr),
             DidDeleteSchema::document.eq(doc),

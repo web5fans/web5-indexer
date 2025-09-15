@@ -18,6 +18,8 @@ pub struct DidRecord {
     #[diesel(column_name = "ckbAddress")]
     pub ckb_address: String,
     pub handle: String,
+    #[diesel(column_name = "signingKey")]
+    pub signing_key: String,
     #[diesel(column_name = "txHash")]
     pub tx_hash: String,
     #[diesel(column_name = "outIndex")]

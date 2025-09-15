@@ -1,6 +1,7 @@
 use crate::{
-    db::{query_valid_did_doc, resolve_valid_handle, DbPool},
+    db::{DbPool, query_valid_did_doc, resolve_valid_handle},
     error::AppError,
+    util::check_did_str,
 };
 use actix_web::{
     HttpResponse,
@@ -10,6 +11,9 @@ use actix_web::{
 pub async fn query_did_doc(path: Path<String>, pool: Data<DbPool>) -> HttpResponse {
     let did = path.into_inner();
     let mut conn = pool.get().unwrap();
+    if !check_did_str(&did) {
+        return HttpResponse::from_error(AppError::IncompatibleDid(did));
+    }
     match block(move || query_valid_did_doc(&mut conn, did))
         .await
         .map_err(|e| AppError::RunTimeError(e.to_string()))

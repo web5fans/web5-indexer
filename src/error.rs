@@ -24,6 +24,8 @@ pub enum AppError {
     DagCborError(String),
     #[display("Did document in compatible: {_0}")]
     IncompatibleDidDoc(String),
+    #[display("Did format in compatible: {_0}")]
+    IncompatibleDid(String),
     #[display("Db record count in compatible: {_0}")]
     DbCountError(String),
     #[display("Ckb node rpc error: {_0}")]
@@ -47,6 +49,7 @@ impl ResponseError for AppError {
             AppError::DbCountError(_) => (500, self.to_string()),
             AppError::CkbRpcError(_) => (500, self.to_string()),
             AppError::HandleNotFound(_) => (404, self.to_string()),
+            AppError::IncompatibleDid(_) => (500, self.to_string()),
         };
         let error_response = ErrorResponse { message: error_msg };
 
