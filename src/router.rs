@@ -1,7 +1,7 @@
 use crate::{
-    db::{DbPool, query_valid_did_doc, resolve_valid_handle},
+    db::{DbPool, query_all_did_doc_by_ckb_addr, query_valid_did_doc},
     error::AppError,
-    util::check_did_str,
+    util::{check_did_str, extract_core_did},
 };
 use actix_web::{
     HttpResponse,
@@ -14,7 +14,8 @@ pub async fn query_did_doc(path: Path<String>, pool: Data<DbPool>) -> HttpRespon
     if !check_did_str(&did) {
         return HttpResponse::from_error(AppError::IncompatibleDid(did));
     }
-    match block(move || query_valid_did_doc(&mut conn, did))
+    let core_did = extract_core_did(&did);
+    match block(move || query_valid_did_doc(&mut conn, core_did))
         .await
         .map_err(|e| AppError::RunTimeError(e.to_string()))
     {
@@ -26,15 +27,15 @@ pub async fn query_did_doc(path: Path<String>, pool: Data<DbPool>) -> HttpRespon
     }
 }
 
-pub async fn resolve_handle(path: Path<String>, pool: Data<DbPool>) -> HttpResponse {
-    let handle = path.into_inner();
+pub async fn resolve_ckb_addr(path: Path<String>, pool: Data<DbPool>) -> HttpResponse {
+    let ckb_addr = path.into_inner();
     let mut conn = pool.get().unwrap();
-    match block(move || resolve_valid_handle(&mut conn, handle))
+    match block(move || query_all_did_doc_by_ckb_addr(&mut conn, ckb_addr))
         .await
         .map_err(|e| AppError::RunTimeError(e.to_string()))
     {
         Ok(res) => match res {
-            Ok(did) => HttpResponse::Ok().body(did),
+            Ok(dids) => HttpResponse::Ok().json(dids),
             Err(err) => HttpResponse::from_error(err),
         },
         Err(err) => HttpResponse::from_error(err),

@@ -1,8 +1,7 @@
-use std::io;
-
 use actix_web::{HttpResponse, ResponseError};
 use derive_more::Display;
 use serde::Serialize;
+use std::io;
 
 #[derive(Clone, Debug, Display, PartialEq)]
 pub enum AppError {
@@ -32,6 +31,8 @@ pub enum AppError {
     CkbRpcError(String),
     #[display("Handle not registered: {_0}")]
     HandleNotFound(String),
+    #[display("Ckb address not registered: {_0}")]
+    CkbAddrNotFound(String),
 }
 
 impl ResponseError for AppError {
@@ -50,6 +51,7 @@ impl ResponseError for AppError {
             AppError::CkbRpcError(_) => (500, self.to_string()),
             AppError::HandleNotFound(_) => (404, self.to_string()),
             AppError::IncompatibleDid(_) => (500, self.to_string()),
+            AppError::CkbAddrNotFound(_) => (404, self.to_string()),
         };
         let error_response = ErrorResponse { message: error_msg };
 

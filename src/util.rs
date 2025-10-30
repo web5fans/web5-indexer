@@ -56,8 +56,17 @@ pub fn check_did_doc(doc: &Web5DocumentData) -> Result<(String, String), AppErro
     }
 }
 
-pub fn check_did_str(did: &str) -> bool {
-    did.starts_with("did:web5")
+pub fn check_did_str(_did: &str) -> bool {
+    // did.starts_with("did:web5")
+    true
+}
+
+pub fn extract_core_did(did: &str) -> String {
+    if did.starts_with("did:") {
+        did.split(':').last().unwrap().to_string()
+    } else {
+        did.to_string()
+    }
 }
 
 pub fn check_signing_key_str(did: &str) -> bool {
@@ -72,7 +81,8 @@ pub fn transfer_time(ts: u64) -> String {
 }
 
 pub fn calculate_web5_did(args: &[u8]) -> String {
-    format!("did:web5:{}", BASE32.encode(args).to_lowercase())
+    // format!("did:web5:{}", BASE32.encode(args).to_lowercase())
+    BASE32.encode(args).to_lowercase()
 }
 
 pub fn calculate_address(lock_script: &Script, network: NetworkType) -> Address {
