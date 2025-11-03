@@ -1,6 +1,6 @@
 # web5-indexer
 
-It's a indexer for did:web5. The indexer would follow every did transaction on [CKB](https://www.nervos.org/ckbpage) blockchain. And indexing every did record through path `<server url>\{:did}`.
+It's a indexer for did web5 protocol. The indexer would follow every did transaction on [CKB](https://www.nervos.org/ckbpage) blockchain. And indexing every did record through path `<server url>\{:did}`.
 
 ## Quick start
 

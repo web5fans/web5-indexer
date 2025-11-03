@@ -28,17 +28,11 @@ pub fn parse_molecule(bytes: &[u8]) -> Result<Web5DocumentData, AppError> {
     )
 }
 
-pub fn check_did_doc(doc: &Web5DocumentData) -> Result<String, AppError> {
+pub fn check_did_doc(doc: &Web5DocumentData) -> Result<(String, String), AppError> {
     if doc.also_known_as.len() == 0 || !doc.also_known_as[0].starts_with("at://") {
         return Err(AppError::IncompatibleDidDoc(format!(
             "alsoKnownAs not correct: {:?}",
             doc.also_known_as
-        )));
-    }
-    let handle = doc.also_known_as[0][5..].to_string();
-    if doc.verification_methods.len() == 0 {
-        return Err(AppError::IncompatibleDidDoc(format!(
-            "verificationMethods not provide",
         )));
     }
     if doc.services.len() == 0 {
@@ -46,7 +40,37 @@ pub fn check_did_doc(doc: &Web5DocumentData) -> Result<String, AppError> {
             "services not provide",
         )));
     }
-    Ok(handle)
+    let handle = doc.also_known_as[0][5..].to_string();
+    if let Some(key) = doc.verification_methods.get("atproto") {
+        if !check_signing_key_str(key) {
+            Err(AppError::IncompatibleDidDoc(format!(
+                "verificationMethods provided signing key format error: {key}",
+            )))
+        } else {
+            Ok((handle, key.clone()))
+        }
+    } else {
+        Err(AppError::IncompatibleDidDoc(format!(
+            "verificationMethods not provide",
+        )))
+    }
+}
+
+pub fn check_did_str(_did: &str) -> bool {
+    // did.starts_with("did:web5")
+    true
+}
+
+pub fn extract_core_did(did: &str) -> String {
+    if did.starts_with("did:") {
+        did.split(':').last().unwrap().to_string()
+    } else {
+        did.to_string()
+    }
+}
+
+pub fn check_signing_key_str(did: &str) -> bool {
+    did.starts_with("did:key")
 }
 
 pub fn transfer_time(ts: u64) -> String {
@@ -57,7 +81,8 @@ pub fn transfer_time(ts: u64) -> String {
 }
 
 pub fn calculate_web5_did(args: &[u8]) -> String {
-    format!("did:web5:{}", BASE32.encode(args).to_lowercase())
+    // format!("did:web5:{}", BASE32.encode(args).to_lowercase())
+    BASE32.encode(args).to_lowercase()
 }
 
 pub fn calculate_address(lock_script: &Script, network: NetworkType) -> Address {

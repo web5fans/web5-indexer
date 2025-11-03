@@ -1,6 +1,9 @@
 use crate::{
     cell_data::{Bytes, DidWeb5Data, DidWeb5DataUnion},
-    db::{delete_record, insert_record, query_valid_did_doc_by_index, query_valid_index_set},
+    db::{
+        check_connection, delete_record, insert_record, query_valid_did_doc_by_index,
+        query_valid_index_set,
+    },
     error::AppError,
     types::Web5DocumentData,
     util::{calculate_address, calculate_web5_did, check_did_doc},
@@ -26,7 +29,15 @@ pub struct RollingResult {
 }
 
 impl CkbCtx {
-    pub fn init(conn: &mut PgConnection, token: CancellationToken) -> Self {
+    pub async fn init(conn: &mut PgConnection, token: CancellationToken) -> Self {
+        loop {
+            if check_connection(conn) {
+                break;
+            } else {
+                info!("Please create indexer schema");
+                time::sleep(Duration::from_secs(3)).await;
+            }
+        }
         let mut ctx = CkbCtx {
             valid_cells: HashSet::new(),
             token,
@@ -96,6 +107,7 @@ impl CkbCtx {
                                 conn,
                                 did_record.did,
                                 did_record.handle,
+                                did_record.signing_key,
                                 header.timestamp.value(),
                                 did_record.ckb_address,
                                 tx_hash.to_string(),
@@ -132,7 +144,7 @@ impl CkbCtx {
                                     "Get did document:\n{}",
                                     serde_json::to_string_pretty(&didoc).unwrap()
                                 );
-                                let handle = match check_did_doc(&didoc) {
+                                let (handle, signing_key) = match check_did_doc(&didoc) {
                                     Ok(handle) => handle,
                                     Err(app_err) => {
                                         error!("check_did_doc failed: {}", app_err.to_string());
@@ -143,6 +155,7 @@ impl CkbCtx {
                                     conn,
                                     calculate_web5_did(&args[..20]),
                                     handle,
+                                    signing_key,
                                     header.timestamp.value(),
                                     ckb_addr.to_string(),
                                     tx_hash.to_string(),
