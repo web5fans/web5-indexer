@@ -24,16 +24,6 @@ pub fn establish_connection(db_url: String) -> DbPool {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn check_connection(conn: &mut PgConnection) -> bool {
-    DidRecordSchema::did_record
-        .filter(DidRecordSchema::valid.eq(true))
-        .select(models::DidRecord::as_select())
-        .first(conn)
-        .optional()
-        .is_ok()
-}
-
-#[tracing::instrument(skip_all)]
 pub fn query_valid_did_doc(
     conn: &mut PgConnection,
     did: String,
@@ -47,25 +37,6 @@ pub fn query_valid_did_doc(
         .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
         .ok_or(AppError::DidDocNotFound(did.clone()))?;
     Ok(serde_json::from_str(&record.document).map_err(|_| AppError::DidDocNoData(did))?)
-}
-
-#[tracing::instrument(skip_all)]
-pub fn query_all_did_doc_by_ckb_addr(
-    conn: &mut PgConnection,
-    ckb_addr: String,
-) -> Result<Vec<String>, AppError> {
-    let did_records = DidRecordSchema::did_record
-        .filter(DidRecordSchema::ckbAddress.eq(ckb_addr.to_lowercase().clone()))
-        .filter(DidRecordSchema::valid.eq(true))
-        .select(models::DidRecord::as_select())
-        .get_results(conn)
-        .optional()
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
-        .ok_or(AppError::CkbAddrNotFound(ckb_addr.clone()))?
-        .into_iter()
-        .map(|record| record.did)
-        .collect();
-    Ok(did_records)
 }
 
 #[tracing::instrument(skip_all)]
@@ -111,11 +82,25 @@ pub fn query_count(conn: &mut PgConnection) -> Result<i64, AppError> {
 }
 
 #[tracing::instrument(skip_all)]
+pub fn resolve_valid_handle(
+    conn: &mut PgConnection,
+    handle: String,
+) -> Result<String, AppError> {
+    DidRecordSchema::did_record
+        .filter(DidRecordSchema::handle.eq(handle.clone()))
+        .filter(DidRecordSchema::valid.eq(true))
+        .select(DidRecordSchema::did)
+        .first(conn)
+        .optional()
+        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
+        .ok_or(AppError::HandleNotFound(handle.clone()))
+}
+
+#[tracing::instrument(skip_all)]
 pub fn insert_record(
     conn: &mut PgConnection,
     did: String,
     handle: String,
-    signing_key: String,
     time_stamp: u64,
     ckb_addr: String,
     tx_hash: String,
@@ -129,8 +114,7 @@ pub fn insert_record(
     let _: String = insert_into(DidRecordSchema::did_record)
         .values((
             DidRecordSchema::did.eq(did),
-            DidRecordSchema::handle.eq(handle.to_lowercase()),
-            DidRecordSchema::signingKey.eq(signing_key),
+            DidRecordSchema::handle.eq(handle),
             DidRecordSchema::createdAt.eq(created_at),
             DidRecordSchema::ckbAddress.eq(ckb_addr),
             DidRecordSchema::document.eq(doc_str),
@@ -162,7 +146,7 @@ pub fn update_record(
     update(DidRecordSchema::did_record)
         .filter(DidRecordSchema::did.eq(did))
         .set((
-            DidRecordSchema::handle.eq(handle.to_lowercase()),
+            DidRecordSchema::handle.eq(handle),
             DidRecordSchema::createdAt.eq(created_at),
             DidRecordSchema::document.eq(doc_str),
             DidRecordSchema::txHash.eq(tx_hash),
@@ -179,7 +163,6 @@ pub fn delete_record(
     conn: &mut PgConnection,
     did: String,
     handle: String,
-    signing_key: String,
     time_stamp: u64,
     ckb_addr: String,
     tx_hash: String,
@@ -197,7 +180,6 @@ pub fn delete_record(
         .values((
             DidDeleteSchema::did.eq(did),
             DidDeleteSchema::handle.eq(handle),
-            DidDeleteSchema::signingKey.eq(signing_key),
             DidDeleteSchema::deletedAt.eq(deleted_at),
             DidDeleteSchema::ckbAddress.eq(ckb_addr),
             DidDeleteSchema::document.eq(doc),

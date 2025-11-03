@@ -3,7 +3,7 @@ use crate::{
     config::AppConfig,
     db::{establish_connection, query_count},
     error::AppError,
-    router::{query_did_doc, resolve_ckb_addr},
+    router::{query_did_doc, resolve_handle},
 };
 use actix_cors::Cors;
 use actix_files::NamedFile;
@@ -47,7 +47,7 @@ async fn main() -> Result<(), AppError> {
     let token = CancellationToken::new();
     let pool_for_rolling = pool.clone();
     let mut conn = pool_for_rolling.get().unwrap();
-    let mut ckb_ctx = CkbCtx::init(&mut conn, token).await;
+    let mut ckb_ctx = CkbCtx::init(&mut conn, token);
 
     let task_handle = task::spawn(async move {
         let target_code_hash = H256::from_str(&config.code_hash).unwrap();
@@ -57,8 +57,9 @@ async fn main() -> Result<(), AppError> {
         let mut height = match query_count(&mut conn) {
             Ok(count) => {
                 if count < start_height as i64 {
-                    info!("Use config height: {start_height}");
-                    start_height
+                    return Err(AppError::DbCountError(format!(
+                        "height error. count: {count}, config height: {start_height}",
+                    )));
                 } else {
                     info!("Found old count record: {count}");
                     count as u64
@@ -130,9 +131,7 @@ async fn main() -> Result<(), AppError> {
                     .max_age(3600),
             )
             .service(web::resource("/{did}").route(web::get().to(query_did_doc)))
-            .service(
-                web::resource("/resolve-ckb-addr/{ckbAddr}").route(web::get().to(resolve_ckb_addr)),
-            )
+            .service(web::resource("/resolve-handle/{handle}").route(web::get().to(resolve_handle)))
             .service(
                 web::resource("/test").to(|req: HttpRequest| match *req.method() {
                     Method::GET => HttpResponse::Ok(),
@@ -149,8 +148,7 @@ async fn main() -> Result<(), AppError> {
     let server_handle = server.handle();
     let server_task = tokio::spawn(server);
 
-    let res = task_handle.await;
-    info!("task return: {res:?}");
+    let _ = task_handle.await;
     server_handle.stop(true).await;
     let _ = server_task.await;
 
