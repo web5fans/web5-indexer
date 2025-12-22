@@ -33,6 +33,10 @@ pub enum AppError {
     HandleNotFound(String),
     #[display("Ckb address not registered: {_0}")]
     CkbAddrNotFound(String),
+    #[display("Vote parameters error: {_0}")]
+    VoteParamsError(String),
+    #[display("No vote found")]
+    VoteNotFound,
 }
 
 impl ResponseError for AppError {
@@ -52,6 +56,8 @@ impl ResponseError for AppError {
             AppError::HandleNotFound(_) => (404, self.to_string()),
             AppError::IncompatibleDid(_) => (500, self.to_string()),
             AppError::CkbAddrNotFound(_) => (404, self.to_string()),
+            AppError::VoteParamsError(_) => (500, self.to_string()),
+            AppError::VoteNotFound => (404, self.to_string()),
         };
         let error_response = ErrorResponse { message: error_msg };
 

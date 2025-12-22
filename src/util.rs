@@ -1,11 +1,12 @@
 use crate::{
-    cell_data::{DidWeb5Data, DidWeb5DataUnion},
     error::AppError,
+    molecules::did_cell::{DidWeb5Data, DidWeb5DataUnion},
     types::Web5DocumentData,
 };
 use chrono::offset::Utc as UtcOffset;
 use chrono::{DateTime, Duration};
 use ckb_sdk::{Address, AddressPayload, NetworkType};
+use ckb_types::core::EpochNumberWithFraction;
 use ckb_types::packed::Script;
 use data_encoding::BASE32;
 use molecule::prelude::Entity;
@@ -88,4 +89,20 @@ pub fn calculate_web5_did(args: &[u8]) -> String {
 pub fn calculate_address(lock_script: &Script, network: NetworkType) -> Address {
     let payload = AddressPayload::from(lock_script.clone());
     Address::new(network, payload, true)
+}
+
+pub fn generate_epoch_raw(epoch_num: u64, epoch_inx: u64, epoch_len: u64) -> Result<u64, AppError> {
+    if epoch_num >= EpochNumberWithFraction::NUMBER_MAXIMUM_VALUE
+        || epoch_inx >= EpochNumberWithFraction::INDEX_MAXIMUM_VALUE
+        || epoch_len >= EpochNumberWithFraction::LENGTH_MAXIMUM_VALUE
+        || epoch_len == 0
+    {
+        Err(AppError::VoteParamsError(format!(
+            "epoch_num({epoch_num})<16777216 & epoch_inx({epoch_inx})<65536 & 0<epoch_len({epoch_len})<65536",
+        )))
+    } else {
+        Ok((epoch_num
+            << EpochNumberWithFraction::INDEX_BITS + EpochNumberWithFraction::LENGTH_BITS)
+            | (epoch_inx << (EpochNumberWithFraction::INDEX_BITS * 2 - 1)) / epoch_len)
+    }
 }

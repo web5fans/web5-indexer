@@ -5,7 +5,7 @@ use crate::schema::indexer::{
 };
 use crate::types::Web5DocumentData;
 use crate::util::transfer_time;
-use diesel::query_dsl::methods::{FilterDsl, OrderDsl, SelectDsl};
+use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
 use diesel::{
     ExpressionMethods, OptionalExtension, RunQueryDsl, SelectableHelper, delete, insert_into,
     update,
@@ -97,17 +97,6 @@ pub fn query_valid_index_set(
         .get_results(conn)
         .optional()
         .map_err(|e| AppError::DbExecuteFailed(e.to_string()))
-}
-
-#[tracing::instrument(skip_all)]
-pub fn query_count(conn: &mut PgConnection) -> Result<i64, AppError> {
-    DidRecordSchema::did_record
-        .order(DidRecordSchema::height.desc())
-        .select(DidRecordSchema::height)
-        .first(conn)
-        .optional()
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
-        .ok_or(AppError::CountNotFound)
 }
 
 #[tracing::instrument(skip_all)]
