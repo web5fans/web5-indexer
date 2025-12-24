@@ -130,7 +130,8 @@ async fn main() -> Result<(), AppError> {
             .wrap(
                 Cors::default()
                     .allowed_methods(vec!["GET"])
-                    .supports_credentials()
+                    .allow_any_origin()
+                    .send_wildcard()
                     .max_age(3600),
             )
             .service(
