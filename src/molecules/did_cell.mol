@@ -1,0 +1,12 @@
+vector Bytes <byte>;
+vector String <byte>; // In UTF-8
+option StringOpt (String);
+
+table DidWeb5DataV1 {
+    document: Bytes,
+    local_id: StringOpt,
+}
+
+union DidWeb5Data {
+    DidWeb5DataV1,
+}

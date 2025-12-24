@@ -1,9 +1,9 @@
 use crate::{
     ckb::CkbCtx,
     config::AppConfig,
-    db::{establish_connection, query_count},
+    db::{did::establish_connection, query_latest_height},
     error::AppError,
-    router::query_did_doc,
+    router::{query_address_vote, query_all_votes, query_did_doc, resolve_ckb_addr},
 };
 use actix_cors::Cors;
 use actix_files::NamedFile;
@@ -47,19 +47,20 @@ async fn main() -> Result<(), AppError> {
     let token = CancellationToken::new();
     let pool_for_rolling = pool.clone();
     let mut conn = pool_for_rolling.get().unwrap();
-    let mut ckb_ctx = CkbCtx::init(&mut conn, token).await;
+    let mode = config.app_mode.iter().map(|m| m.as_str().into()).collect();
+    let mut ckb_ctx = CkbCtx::init(&mut conn, token, mode).await;
 
     let task_handle = task::spawn(async move {
-        let target_code_hash = H256::from_str(&config.code_hash).unwrap();
+        let did_code_hash = H256::from_str(&config.code_hash).unwrap();
+        let vote_code_hash = H256::from_str(&config.vote_code_hash).unwrap();
         let client = CkbRpcAsyncClient::new(&config.ckb_node);
         let mut is_sync = true;
         let start_height = config.start_height;
-        let mut height = match query_count(&mut conn) {
+        let mut height = match query_latest_height(&mut conn, &ckb_ctx.mode) {
             Ok(count) => {
                 if count < start_height as i64 {
-                    return Err(AppError::DbCountError(format!(
-                        "height error. count: {count}, config height: {start_height}",
-                    )));
+                    info!("Use config height: {start_height}");
+                    start_height
                 } else {
                     info!("Found old count record: {count}");
                     count as u64
@@ -73,6 +74,8 @@ async fn main() -> Result<(), AppError> {
         };
         let select_token = ckb_ctx.token.clone();
         let mut count = 0;
+        let network_type = NetworkType::from_raw_str(&config.ckb_network)
+            .expect("Config CKB_NETWORK set 'ckb' or 'ckb_testnet'");
         loop {
             select! {
                 _ = select_token.cancelled() => {
@@ -90,9 +93,9 @@ async fn main() -> Result<(), AppError> {
                     height,
                     &client,
                     &mut conn,
-                    NetworkType::from_raw_str(&config.ckb_network)
-                        .expect("Config CKB_NETWORK set 'ckb' or 'ckb_testnet'"),
-                    target_code_hash.clone(),
+                    network_type,
+                    &did_code_hash,
+                    &vote_code_hash,
                     is_sync,
                 ) => {
                     match res {
@@ -127,11 +130,15 @@ async fn main() -> Result<(), AppError> {
             .wrap(
                 Cors::default()
                     .allowed_methods(vec!["GET"])
-                    .supports_credentials()
+                    .allow_any_origin()
+                    .send_wildcard()
                     .max_age(3600),
             )
-            .service(web::resource("/{did}").route(web::get().to(query_did_doc)))
-            // .service(web::resource("/resolve-handle/{handle}").route(web::get().to(resolve_handle)))
+            .service(
+                web::resource("/resolve-ckb-addr/{ckbAddr}").route(web::get().to(resolve_ckb_addr)),
+            )
+            .service(web::resource("/all-votes").route(web::get().to(query_all_votes)))
+            .service(web::resource("/address-vote").route(web::get().to(query_address_vote)))
             .service(
                 web::resource("/test").to(|req: HttpRequest| match *req.method() {
                     Method::GET => HttpResponse::Ok(),
@@ -139,6 +146,7 @@ async fn main() -> Result<(), AppError> {
                     _ => HttpResponse::NotFound(),
                 }),
             )
+            .service(web::resource("/{did}").route(web::get().to(query_did_doc)))
             .default_service(web::to(default_handler))
     })
     .bind(("0.0.0.0", config.listen_port as u16))?
@@ -148,19 +156,20 @@ async fn main() -> Result<(), AppError> {
     let server_handle = server.handle();
     let server_task = tokio::spawn(server);
 
-    let _ = task_handle.await;
+    let res = task_handle.await;
+    info!("task return: {res:?}");
     server_handle.stop(true).await;
     let _ = server_task.await;
 
     Ok(())
 }
 
-mod cell_data;
 mod ckb;
 pub mod config;
 pub mod db;
 pub mod error;
 pub mod models;
+mod molecules;
 pub mod router;
 pub mod schema;
 pub mod types;

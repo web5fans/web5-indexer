@@ -11,6 +11,8 @@ pub struct AppConfig {
     pub worker_num: u64,
     pub start_height: u64,
     pub code_hash: String,
+    pub vote_code_hash: String,
+    pub app_mode: Vec<String>,
 }
 
 impl AppConfig {
@@ -29,6 +31,19 @@ impl AppConfig {
             code_hash: env::var("CODE_HASH").unwrap_or(
                 "510150477b10d6ab551a509b71265f3164e9fd4137fcb5a4322f49f03092c7c5".into(),
             ),
+            vote_code_hash: env::var("VOTE_CODE_HASH").unwrap_or(
+                "b140de2d7d1536cfdcb82da7520475edce5785dff90edae9073c1143d88f50c5".into(),
+            ),
+            app_mode: match env::var("APP_MODE") {
+                Ok(value) => value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+                Err(_) => {
+                    vec!["did".to_string()]
+                }
+            },
         }
     }
 }

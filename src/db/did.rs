@@ -5,7 +5,7 @@ use crate::schema::indexer::{
 };
 use crate::types::Web5DocumentData;
 use crate::util::transfer_time;
-use diesel::query_dsl::methods::{FilterDsl, OrderDsl, SelectDsl};
+use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
 use diesel::{
     ExpressionMethods, OptionalExtension, RunQueryDsl, SelectableHelper, delete, insert_into,
     update,
@@ -50,6 +50,25 @@ pub fn query_valid_did_doc(
 }
 
 #[tracing::instrument(skip_all)]
+pub fn query_all_did_doc_by_ckb_addr(
+    conn: &mut PgConnection,
+    ckb_addr: String,
+) -> Result<Vec<String>, AppError> {
+    let did_records = DidRecordSchema::did_record
+        .filter(DidRecordSchema::ckbAddress.eq(ckb_addr.to_lowercase().clone()))
+        .filter(DidRecordSchema::valid.eq(true))
+        .select(models::DidRecord::as_select())
+        .get_results(conn)
+        .optional()
+        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
+        .ok_or(AppError::CkbAddrNotFound(ckb_addr.clone()))?
+        .into_iter()
+        .map(|record| record.did)
+        .collect();
+    Ok(did_records)
+}
+
+#[tracing::instrument(skip_all)]
 pub fn query_valid_did_doc_by_index(
     conn: &mut PgConnection,
     tx_hash: String,
@@ -81,29 +100,6 @@ pub fn query_valid_index_set(
 }
 
 #[tracing::instrument(skip_all)]
-pub fn query_count(conn: &mut PgConnection) -> Result<i64, AppError> {
-    DidRecordSchema::did_record
-        .order(DidRecordSchema::height.desc())
-        .select(DidRecordSchema::height)
-        .first(conn)
-        .optional()
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
-        .ok_or(AppError::CountNotFound)
-}
-
-#[tracing::instrument(skip_all)]
-pub fn resolve_valid_handle(conn: &mut PgConnection, handle: String) -> Result<String, AppError> {
-    DidRecordSchema::did_record
-        .filter(DidRecordSchema::handle.eq(handle.clone()))
-        .filter(DidRecordSchema::valid.eq(true))
-        .select(DidRecordSchema::did)
-        .first(conn)
-        .optional()
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
-        .ok_or(AppError::HandleNotFound(handle.clone()))
-}
-
-#[tracing::instrument(skip_all)]
 pub fn insert_record(
     conn: &mut PgConnection,
     did: String,
@@ -122,7 +118,7 @@ pub fn insert_record(
     let _: String = insert_into(DidRecordSchema::did_record)
         .values((
             DidRecordSchema::did.eq(did),
-            DidRecordSchema::handle.eq(handle),
+            DidRecordSchema::handle.eq(handle.to_lowercase()),
             DidRecordSchema::signingKey.eq(signing_key),
             DidRecordSchema::createdAt.eq(created_at),
             DidRecordSchema::ckbAddress.eq(ckb_addr),
@@ -155,7 +151,7 @@ pub fn update_record(
     update(DidRecordSchema::did_record)
         .filter(DidRecordSchema::did.eq(did))
         .set((
-            DidRecordSchema::handle.eq(handle),
+            DidRecordSchema::handle.eq(handle.to_lowercase()),
             DidRecordSchema::createdAt.eq(created_at),
             DidRecordSchema::document.eq(doc_str),
             DidRecordSchema::txHash.eq(tx_hash),

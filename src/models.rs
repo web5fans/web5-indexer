@@ -10,6 +10,30 @@ use serde_derive::{Deserialize, Serialize};
     Queryable, Identifiable, Selectable, Clone, Debug, PartialEq, Default, Serialize, Deserialize,
 )]
 #[diesel(primary_key(did))]
+#[diesel(table_name = crate::schema::indexer::did_delete_record)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[serde(rename_all = "camelCase")]
+pub struct DidDeleteRecord {
+    pub did: String,
+    #[diesel(column_name = "ckbAddress")]
+    pub ckb_address: String,
+    pub handle: String,
+    #[diesel(column_name = "signingKey")]
+    pub signing_key: String,
+    #[diesel(column_name = "txHash")]
+    pub tx_hash: String,
+    #[diesel(column_name = "inIndex")]
+    pub in_index: i32,
+    pub document: String,
+    pub height: i64,
+    #[diesel(column_name = "deletedAt")]
+    pub deleted_at: String,
+}
+
+#[derive(
+    Queryable, Identifiable, Selectable, Clone, Debug, PartialEq, Default, Serialize, Deserialize,
+)]
+#[diesel(primary_key(did))]
 #[diesel(table_name = crate::schema::indexer::did_record)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[serde(rename_all = "camelCase")]
@@ -29,4 +53,61 @@ pub struct DidRecord {
     #[diesel(column_name = "createdAt")]
     pub created_at: String,
     pub valid: bool,
+}
+
+#[derive(
+    Queryable, Identifiable, Selectable, Clone, Debug, PartialEq, Default, Serialize, Deserialize,
+)]
+#[diesel(table_name = crate::schema::indexer::vote_record)]
+#[diesel(primary_key(txHash, outIndex))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[serde(rename_all = "camelCase")]
+pub struct VoteRecord {
+    pub address: String,
+    pub args: String,
+    pub height: i64,
+    #[diesel(column_name = "epochRaw")]
+    pub epoch_raw: i64,
+    #[diesel(column_name = "epochNum")]
+    pub epoch_num: i64,
+    #[diesel(column_name = "epochIndex")]
+    pub epoch_index: i64,
+    #[diesel(column_name = "epochLen")]
+    pub epoch_len: i64,
+    #[diesel(column_name = "voteIndex")]
+    pub vote_index: Vec<Option<i32>>,
+    pub timestamp: String,
+    #[diesel(column_name = "txHash")]
+    pub tx_hash: String,
+    #[diesel(column_name = "txIndex")]
+    pub tx_index: i32,
+    #[diesel(column_name = "outIndex")]
+    pub out_index: i32,
+}
+
+#[derive(Insertable, Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+#[diesel(table_name = crate::schema::indexer::vote_record)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[serde(rename_all = "camelCase")]
+pub struct NewVoteRecord {
+    pub address: String,
+    pub args: String,
+    pub height: i64,
+    #[diesel(column_name = "epochRaw")]
+    pub epoch_raw: i64,
+    #[diesel(column_name = "epochNum")]
+    pub epoch_num: i64,
+    #[diesel(column_name = "epochIndex")]
+    pub epoch_index: i64,
+    #[diesel(column_name = "epochLen")]
+    pub epoch_len: i64,
+    #[diesel(column_name = "voteIndex")]
+    pub vote_index: Vec<Option<i32>>,
+    pub timestamp: String,
+    #[diesel(column_name = "txHash")]
+    pub tx_hash: String,
+    #[diesel(column_name = "txIndex")]
+    pub tx_index: i32,
+    #[diesel(column_name = "outIndex")]
+    pub out_index: i32,
 }

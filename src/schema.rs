@@ -30,8 +30,27 @@ pub mod indexer {
         }
     }
 
+    diesel::table! {
+        indexer.vote_record (txHash, outIndex) {
+            address -> Varchar,
+            #[max_length = 40]
+            args -> Bpchar,
+            height -> Int8,
+            epochRaw -> Int8,
+            epochNum -> Int8,
+            epochIndex -> Int8,
+            epochLen -> Int8,
+            voteIndex -> Array<Nullable<Int4>>,
+            timestamp -> Varchar,
+            txHash -> Varchar,
+            txIndex -> Int4,
+            outIndex -> Int4,
+        }
+    }
+
     diesel::allow_tables_to_appear_in_same_query!(
         did_delete_record,
         did_record,
+        vote_record,
     );
 }
