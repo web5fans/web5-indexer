@@ -20,6 +20,8 @@ dotenvy = "0.15"
 serde_ipld_dagcbor = { version = "0.6.1", features = ["codec"] }
 chrono = "0.4"
 data-encoding = "2.0"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+url = "2.5.8"
 
 ckb-sdk = "4.1.0"
 ckb-types = "0.202"

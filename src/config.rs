@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub code_hash: String,
     pub vote_code_hash: String,
     pub app_mode: Vec<String>,
+    pub relay_url: Option<String>,
+    pub bearer_auth: Option<String>,
 }
 
 impl AppConfig {
@@ -44,6 +46,8 @@ impl AppConfig {
                     vec!["did".to_string()]
                 }
             },
+            relay_url: env::var("RELAY_URL").ok(),
+            bearer_auth: env::var("BEARER_AUTH").ok(),
         }
     }
 }

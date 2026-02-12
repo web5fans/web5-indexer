@@ -1,3 +1,4 @@
+use crate::db::handle_db_error;
 use crate::error::AppError;
 use crate::models;
 use crate::schema::indexer::{
@@ -5,10 +6,9 @@ use crate::schema::indexer::{
 };
 use crate::types::Web5DocumentData;
 use crate::util::transfer_time;
-use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
 use diesel::{
-    ExpressionMethods, OptionalExtension, RunQueryDsl, SelectableHelper, delete, insert_into,
-    update,
+    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper, delete,
+    insert_into, update,
 };
 use diesel::{pg::PgConnection, r2d2};
 
@@ -24,13 +24,12 @@ pub fn establish_connection(db_url: String) -> DbPool {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn check_connection(conn: &mut PgConnection) -> bool {
+pub fn check_connection(conn: &mut PgConnection) -> Result<i64, AppError> {
     DidRecordSchema::did_record
         .filter(DidRecordSchema::valid.eq(true))
-        .select(models::DidRecord::as_select())
-        .first(conn)
-        .optional()
-        .is_ok()
+        .count()
+        .get_result(conn)
+        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))
 }
 
 #[tracing::instrument(skip_all)]
@@ -69,6 +68,18 @@ pub fn query_all_did_doc_by_ckb_addr(
 }
 
 #[tracing::instrument(skip_all)]
+pub fn query_ckb_addr_by_did(conn: &mut PgConnection, did: String) -> Result<String, AppError> {
+    DidRecordSchema::did_record
+        .filter(DidRecordSchema::did.eq(did.clone()))
+        .filter(DidRecordSchema::valid.eq(true))
+        .select(DidRecordSchema::ckbAddress)
+        .first(conn)
+        .optional()
+        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
+        .ok_or(AppError::DidDocNotFound(did.clone()))
+}
+
+#[tracing::instrument(skip_all)]
 pub fn query_valid_did_doc_by_index(
     conn: &mut PgConnection,
     tx_hash: String,
@@ -88,15 +99,15 @@ pub fn query_valid_did_doc_by_index(
 }
 
 #[tracing::instrument(skip_all)]
-pub fn query_valid_index_set(
-    conn: &mut PgConnection,
-) -> Result<Option<Vec<(String, i32)>>, AppError> {
+pub fn query_valid_index_set(conn: &mut PgConnection) -> Result<Vec<(String, i32)>, AppError> {
     DidRecordSchema::did_record
         .filter(DidRecordSchema::valid.eq(true))
         .select((DidRecordSchema::txHash, DidRecordSchema::outIndex))
         .get_results(conn)
-        .optional()
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))
+        .map_err(|e| {
+            error!("db operation failed: {}", e.to_string());
+            handle_db_error(e, true)
+        })
 }
 
 #[tracing::instrument(skip_all)]
@@ -110,11 +121,11 @@ pub fn insert_record(
     tx_hash: String,
     out_index: i32,
     block_height: i64,
-    doc: Web5DocumentData,
+    doc: &Web5DocumentData,
     valid: bool,
 ) -> Result<(), AppError> {
     let created_at = transfer_time(time_stamp);
-    let doc_str = serde_json::to_string(&doc).map_err(|e| AppError::RunTimeError(e.to_string()))?;
+    let doc_str = serde_json::to_string(doc).map_err(|e| AppError::RunTimeError(e.to_string()))?;
     let _: String = insert_into(DidRecordSchema::did_record)
         .values((
             DidRecordSchema::did.eq(did),
@@ -131,7 +142,10 @@ pub fn insert_record(
         .on_conflict_do_nothing()
         .returning(DidRecordSchema::did)
         .get_result(conn)
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?;
+        .map_err(|e| {
+            error!("db operation failed: {}", e.to_string());
+            handle_db_error(e, false)
+        })?;
     Ok(())
 }
 
@@ -159,25 +173,28 @@ pub fn update_record(
             DidRecordSchema::height.eq(block_height),
         ))
         .execute(conn)
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?;
+        .map_err(|e| {
+            error!("db operation failed: {}", e.to_string());
+            handle_db_error(e, false)
+        })?;
     Ok(())
 }
 
 #[tracing::instrument(skip_all)]
 pub fn delete_record(
     conn: &mut PgConnection,
-    did: String,
-    handle: String,
-    signing_key: String,
+    did: &str,
+    handle: &str,
+    signing_key: &str,
     time_stamp: u64,
-    ckb_addr: String,
-    tx_hash: String,
+    ckb_addr: &str,
+    tx_hash: &str,
     in_index: i32,
     block_height: i64,
-    doc: String,
+    doc: &str,
 ) -> Result<(), AppError> {
     delete(DidRecordSchema::did_record)
-        .filter(DidRecordSchema::did.eq(did.clone()))
+        .filter(DidRecordSchema::did.eq(did))
         .execute(conn)
         .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?;
 
@@ -197,6 +214,9 @@ pub fn delete_record(
         .on_conflict_do_nothing()
         .returning(DidDeleteSchema::did)
         .get_result(conn)
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?;
+        .map_err(|e| {
+            error!("db operation failed: {}", e.to_string());
+            handle_db_error(e, false)
+        })?;
     Ok(())
 }

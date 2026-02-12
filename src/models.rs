@@ -111,3 +111,23 @@ pub struct NewVoteRecord {
     #[diesel(column_name = "outIndex")]
     pub out_index: i32,
 }
+
+#[derive(
+    Queryable,
+    Identifiable,
+    Selectable,
+    Clone,
+    Debug,
+    PartialEq,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+#[diesel(table_name = crate::schema::indexer::pds_list)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[serde(rename_all = "camelCase")]
+#[diesel(primary_key(pds_url))]
+pub struct PdsList {
+    pub pds_url: String,
+    pub user_num: i64,
+}

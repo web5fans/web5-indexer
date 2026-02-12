@@ -1,13 +1,15 @@
 use crate::{
+    crawl::CrawlManager,
     db::{
         did::{
             check_connection, delete_record, insert_record, query_valid_did_doc_by_index,
             query_valid_index_set,
         },
+        pds::{insert_pds, query_pds, update_pds},
         vote::insert_vote_record,
     },
-    error::AppError,
-    models,
+    error::{AppError, handle_error},
+    models::{self, PdsList},
     molecules::did_cell::{Bytes, DidWeb5Data, DidWeb5DataUnion},
     types::Web5DocumentData,
     util::{
@@ -25,6 +27,7 @@ use molecule::prelude::Entity;
 use std::{collections::HashSet, str::FromStr, time::Duration};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AppMode {
@@ -49,6 +52,7 @@ pub struct CkbCtx {
     valid_cells: HashSet<(H256, i32)>,
     pub token: CancellationToken,
     pub mode: Vec<AppMode>,
+    pub crawl_manager: CrawlManager,
 }
 
 pub struct RollingResult {
@@ -61,13 +65,17 @@ impl CkbCtx {
         conn: &mut PgConnection,
         token: CancellationToken,
         mode: Vec<AppMode>,
+        crawl_manager: CrawlManager,
     ) -> Self {
         loop {
-            if check_connection(conn) {
-                break;
-            } else {
-                info!("Please create indexer schema");
-                time::sleep(Duration::from_secs(3)).await;
+            match check_connection(conn) {
+                Ok(_n) => {
+                    break;
+                }
+                Err(_) => {
+                    info!("Please create indexer schema");
+                    time::sleep(Duration::from_secs(3)).await;
+                }
             }
         }
         if mode.len() == 0 {
@@ -77,13 +85,12 @@ impl CkbCtx {
             valid_cells: HashSet::new(),
             token,
             mode,
+            crawl_manager,
         };
         let live_cells = query_valid_index_set(conn).unwrap();
-        if let Some(live_cells) = live_cells {
-            info!("Ckb Ctx init. Found {} records", live_cells.len());
-            for (str, idx) in live_cells {
-                ctx.valid_cells.insert((H256::from_str(&str).unwrap(), idx));
-            }
+        info!("Ckb Ctx init. Found {} records", live_cells.len());
+        for (str, idx) in live_cells {
+            ctx.valid_cells.insert((H256::from_str(&str).unwrap(), idx));
         }
         ctx
     }
@@ -129,7 +136,8 @@ impl CkbCtx {
                                 header.timestamp.value(),
                                 tx.hash.to_string(),
                                 query_height as i64,
-                            )?;
+                            )
+                            .await?;
                         }
                     }
 
@@ -145,7 +153,8 @@ impl CkbCtx {
                                 tx.hash.clone(),
                                 query_height as i64,
                                 network,
-                            )?;
+                            )
+                            .await?;
                         }
                         if self.mode.contains(&AppMode::VOTE) {
                             self.vote_output_handle(
@@ -190,7 +199,7 @@ impl CkbCtx {
         Ok(RollingResult { is_sync, got_block })
     }
 
-    pub fn did_input_handle(
+    pub async fn did_input_handle(
         &mut self,
         conn: &mut PgConnection,
         in_index: i32,
@@ -216,20 +225,38 @@ impl CkbCtx {
                 };
             match delete_record(
                 conn,
-                did_record.did,
-                did_record.handle,
-                did_record.signing_key,
+                &did_record.did,
+                &did_record.handle,
+                &did_record.signing_key,
                 time_stamp,
-                did_record.ckb_address,
-                tx_hash,
+                &did_record.ckb_address,
+                &tx_hash,
                 in_index,
                 block_height,
-                did_record.document,
+                &did_record.document,
             ) {
                 Err(app_err) => {
                     error!("[did]: delete_record failed: {}", app_err.to_string());
+                    handle_error(app_err)?;
                 }
                 Ok(_) => {
+                    if let Ok(didoc) =
+                        serde_json::from_str::<Web5DocumentData>(&did_record.document)
+                    {
+                        if let Some(service) = didoc.services.get("atproto_pds") {
+                            self.handle_pds(conn, &service.endpoint, false).await?;
+                        } else {
+                            error!(
+                                "[did]: {}'s did doc not found atproto_pds service",
+                                didoc.also_known_as[0]
+                            );
+                        }
+                    } else {
+                        error!(
+                            "[did]: {}'s did doc not invalid: \n{}",
+                            did_record.handle, did_record.document
+                        )
+                    }
                     self.valid_cells.remove(&(pre_tx_hash, pre_index));
                 }
             };
@@ -237,7 +264,7 @@ impl CkbCtx {
         Ok(())
     }
 
-    pub fn did_output_handle(
+    pub async fn did_output_handle(
         &mut self,
         conn: &mut PgConnection,
         did_code_hash: &H256,
@@ -293,16 +320,25 @@ impl CkbCtx {
                     tx_hash.to_string(),
                     out_inx,
                     block_height,
-                    didoc,
+                    &didoc,
                     true,
                 ) {
                     Err(app_err) => {
                         error!("[did]: insert_record failed: {}", app_err.to_string());
-                        return Ok(());
+                        handle_error(app_err)?;
                     }
-                    _ => {}
+                    Ok(_) => {
+                        if let Some(service) = didoc.services.get("atproto_pds") {
+                            self.handle_pds(conn, &service.endpoint, true).await?;
+                        } else {
+                            error!(
+                                "[did]: {}'s did doc not found atproto_pds service",
+                                didoc.also_known_as[0]
+                            );
+                        }
+                        self.valid_cells.insert((tx_hash, out_inx as i32));
+                    }
                 }
-                self.valid_cells.insert((tx_hash, out_inx as i32));
             }
         }
         Ok(())
@@ -372,6 +408,7 @@ impl CkbCtx {
                                     "[vote]: insert_vote_record failed: {}",
                                     app_err.to_string()
                                 );
+                                handle_error(app_err)?;
                             }
                             _ => {}
                         }
@@ -387,6 +424,87 @@ impl CkbCtx {
             }
         }
         Ok(())
+    }
+
+    pub async fn handle_pds(
+        &self,
+        conn: &mut PgConnection,
+        pds_url: &str,
+        pon: bool, // positive or negative
+    ) -> Result<(), AppError> {
+        match query_pds(conn, pds_url) {
+            Ok(mut pds) => {
+                if pon {
+                    pds.user_num += 1;
+                } else {
+                    pds.user_num -= 1;
+                }
+                match update_pds(conn, &pds) {
+                    Err(app_err) => {
+                        error!("[pds]: update_pds failed: {}", app_err.to_string());
+                    }
+                    _ => {}
+                }
+            }
+            Err(AppError::DbRecordNotFound) => {
+                if !pon {
+                    error!("[pds]: can't be negative when pds not exist");
+                } else if self.crawl_manager.check_pds(pds_url).await.is_ok() {
+                    let new_pds = PdsList {
+                        pds_url: pds_url.to_string(),
+                        user_num: 1,
+                    };
+                    match insert_pds(conn, &new_pds) {
+                        Err(app_err) => {
+                            error!("[pds]: insert_pds failed: {}", app_err.to_string());
+                            handle_error(app_err)?;
+                        }
+                        _ => {}
+                    }
+                    let url = Url::parse(pds_url).map_err(|e| {
+                        AppError::PdsUrlError(format!("{pds_url}: {}", e.to_string()))
+                    })?;
+                    let scheme = url.scheme();
+                    if scheme != "http" && scheme != "https" {
+                        return Err(AppError::PdsUrlError(format!(
+                            "{pds_url}: must be http or https"
+                        )));
+                    }
+                    if let Some(host_url) = url.host_str() {
+                        let host_url = if let Some(port) = url.port() {
+                            format!("{host_url}:{port}")
+                        } else {
+                            format!("{host_url}")
+                        };
+                        let origin_list = self.crawl_manager.pds_list().await.unwrap_or_default();
+                        if !origin_list.contains(&host_url) {
+                            for _ in 0..3 {
+                                match self.crawl_manager.wrap_crawl(&host_url).await {
+                                    Ok(list) => {
+                                        if list.contains(&host_url) {
+                                            info!("[relay]: {host_url} already in pds list");
+                                            break;
+                                        }
+                                        time::sleep(Duration::from_secs(3)).await;
+                                        warn!("[relay]: {host_url} not in pds list");
+                                    }
+                                    Err(e) => {
+                                        error!("[relay]: wrap_crawl error: {}", e.to_string());
+                                        time::sleep(Duration::from_secs(3)).await;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        error!("[relay]: {pds_url} not a valid host");
+                    }
+                } else {
+                    warn!("[relay]: {pds_url} not a valid web5 pds");
+                }
+            }
+            Err(e) => return Err(e),
+        }
+        return Ok(());
     }
 }
 

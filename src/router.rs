@@ -1,6 +1,6 @@
 use crate::{
     db::{
-        did::{DbPool, query_all_did_doc_by_ckb_addr, query_valid_did_doc},
+        did::{DbPool, query_all_did_doc_by_ckb_addr, query_ckb_addr_by_did, query_valid_did_doc},
         vote::{query_address_vote_by_epoch_opt, query_vote_records_by_epoch_opt},
     },
     error::AppError,
@@ -56,6 +56,25 @@ pub async fn resolve_ckb_addr(path: Path<String>, pool: Data<DbPool>) -> HttpRes
     {
         Ok(res) => match res {
             Ok(dids) => HttpResponse::Ok().json(dids),
+            Err(err) => HttpResponse::from_error(err),
+        },
+        Err(err) => HttpResponse::from_error(err),
+    }
+}
+
+pub async fn resolve_did(path: Path<String>, pool: Data<DbPool>) -> HttpResponse {
+    let did = path.into_inner();
+    if !check_did_str(&did) {
+        return HttpResponse::from_error(AppError::IncompatibleDid(did));
+    }
+    let core_did = extract_core_did(&did);
+    let mut conn = pool.get().unwrap();
+    match block(move || query_ckb_addr_by_did(&mut conn, core_did))
+        .await
+        .map_err(|e| AppError::RunTimeError(e.to_string()))
+    {
+        Ok(res) => match res {
+            Ok(ckb_addr) => HttpResponse::Ok().body(ckb_addr),
             Err(err) => HttpResponse::from_error(err),
         },
         Err(err) => HttpResponse::from_error(err),

@@ -15,3 +15,7 @@ CREATE TABLE IF NOT EXISTS indexer.vote_record (
     PRIMARY KEY ("txHash", "outIndex")
 );
 
+CREATE TABLE IF NOT EXISTS indexer.pds_list (
+    "pds_url" VARCHAR PRIMARY KEY,
+    "user_num" BIGINT NOT NULL
+);

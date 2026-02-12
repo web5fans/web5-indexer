@@ -5,14 +5,16 @@ use std::io;
 
 #[derive(Clone, Debug, Display, PartialEq)]
 pub enum AppError {
+    #[display("Db record not found")]
+    DbRecordNotFound,
+    #[display("Db insert or update operation failed")]
+    DbInsOrUpFailed,
     #[display("Did not registered: {_0}")]
     DidDocNotFound(String),
     #[display("Count not found")]
     CountNotFound,
     #[display("Did not available: {_0}")]
     DidDocNoData(String),
-    #[display("Did document not valid: {_0}")]
-    DidDocNotValid(String),
     #[display("Db execution failed: {_0}")]
     DbExecuteFailed(String),
     #[display("Runtime Internal Error: {_0}")]
@@ -29,22 +31,23 @@ pub enum AppError {
     DbCountError(String),
     #[display("Ckb node rpc error: {_0}")]
     CkbRpcError(String),
-    #[display("Handle not registered: {_0}")]
-    HandleNotFound(String),
     #[display("Ckb address not registered: {_0}")]
     CkbAddrNotFound(String),
     #[display("Vote parameters error: {_0}")]
     VoteParamsError(String),
-    #[display("No vote found")]
-    VoteNotFound,
+    #[display("Pds url valid: {_0}")]
+    PdsUrlError(String),
+    #[display("Relay Http request error: {_0}")]
+    RelayHttpError(String),
 }
 
 impl ResponseError for AppError {
     fn error_response(&self) -> HttpResponse<actix_web::body::BoxBody> {
         let (status_code, error_msg) = match self {
+            AppError::DbRecordNotFound => (404, self.to_string()),
+            AppError::DbInsOrUpFailed => (404, self.to_string()),
             AppError::DidDocNotFound(_) => (404, self.to_string()),
             AppError::DidDocNoData(_) => (404, self.to_string()),
-            AppError::DidDocNotValid(_) => (400, self.to_string()),
             AppError::DbExecuteFailed(_) => (500, self.to_string()),
             AppError::RunTimeError(_) => (500, self.to_string()),
             AppError::MoleculeError(_) => (500, self.to_string()),
@@ -53,11 +56,11 @@ impl ResponseError for AppError {
             AppError::CountNotFound => (500, self.to_string()),
             AppError::DbCountError(_) => (500, self.to_string()),
             AppError::CkbRpcError(_) => (500, self.to_string()),
-            AppError::HandleNotFound(_) => (404, self.to_string()),
             AppError::IncompatibleDid(_) => (500, self.to_string()),
             AppError::CkbAddrNotFound(_) => (404, self.to_string()),
             AppError::VoteParamsError(_) => (500, self.to_string()),
-            AppError::VoteNotFound => (404, self.to_string()),
+            AppError::RelayHttpError(_) => (500, self.to_string()),
+            AppError::PdsUrlError(_) => (500, self.to_string()),
         };
         let error_response = ErrorResponse { message: error_msg };
 
@@ -74,5 +77,12 @@ struct ErrorResponse {
 impl From<io::Error> for AppError {
     fn from(value: io::Error) -> Self {
         AppError::RunTimeError(value.to_string())
+    }
+}
+
+pub fn handle_error(e: AppError) -> Result<(), AppError> {
+    match e {
+        AppError::DbRecordNotFound | AppError::DbInsOrUpFailed => Ok(()),
+        e => Err(e),
     }
 }

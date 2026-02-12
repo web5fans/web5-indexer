@@ -5,7 +5,7 @@ use crate::schema::indexer::{
 };
 use diesel::pg::PgConnection;
 use diesel::query_dsl::methods::{OrderDsl, SelectDsl};
-use diesel::{ExpressionMethods, OptionalExtension, RunQueryDsl};
+use diesel::{ExpressionMethods, OptionalExtension, RunQueryDsl, result::Error as DsError};
 
 #[tracing::instrument(skip_all)]
 pub fn query_latest_height(conn: &mut PgConnection, modes: &[AppMode]) -> Result<i64, AppError> {
@@ -40,5 +40,19 @@ pub fn query_latest_height(conn: &mut PgConnection, modes: &[AppMode]) -> Result
     }
 }
 
+fn handle_db_error(err: DsError, qon: bool) -> AppError {
+    match err {
+        DsError::NotFound => {
+            if qon {
+                AppError::DbRecordNotFound
+            } else {
+                AppError::DbInsOrUpFailed
+            }
+        }
+        err => AppError::DbExecuteFailed(err.to_string()),
+    }
+}
+
 pub mod did;
+pub mod pds;
 pub mod vote;

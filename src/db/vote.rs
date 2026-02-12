@@ -1,8 +1,9 @@
+use crate::db::handle_db_error;
 use crate::error::AppError;
 use crate::models;
 use crate::schema::indexer::vote_record::dsl as VoteRecordSchema;
 use diesel::pg::PgConnection;
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, insert_into};
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, insert_into};
 
 #[tracing::instrument(skip_all)]
 pub fn insert_vote_record(
@@ -14,7 +15,10 @@ pub fn insert_vote_record(
         .on_conflict_do_nothing()
         .returning(VoteRecordSchema::height)
         .get_result(conn)
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?;
+        .map_err(|e| {
+            error!("db operation failed: {}", e.to_string());
+            handle_db_error(e, false)
+        })?;
     Ok(())
 }
 
@@ -52,7 +56,10 @@ pub fn query_vote_records_by_epoch_opt(
             ))
             .distinct_on(VoteRecordSchema::address)
             .get_results(conn)
-            .map_err(|e| AppError::DbExecuteFailed(e.to_string()))
+            .map_err(|e| {
+                error!("db operation failed: {}", e.to_string());
+                handle_db_error(e, true)
+            })
     } else {
         VoteRecordSchema::vote_record
             .filter(VoteRecordSchema::args.eq(args))
@@ -65,7 +72,10 @@ pub fn query_vote_records_by_epoch_opt(
             ))
             .distinct_on(VoteRecordSchema::address)
             .get_results(conn)
-            .map_err(|e| AppError::DbExecuteFailed(e.to_string()))
+            .map_err(|e| {
+                error!("db operation failed: {}", e.to_string());
+                handle_db_error(e, true)
+            })
     }
 }
 
@@ -105,7 +115,10 @@ pub fn query_address_vote_by_epoch_opt(
             ))
             .distinct_on(VoteRecordSchema::address)
             .get_result(conn)
-            .map_err(|e| AppError::DbExecuteFailed(e.to_string()))
+            .map_err(|e| {
+                error!("db operation failed: {}", e.to_string());
+                handle_db_error(e, true)
+            })
     } else {
         VoteRecordSchema::vote_record
             .filter(VoteRecordSchema::args.eq(args))
@@ -119,7 +132,10 @@ pub fn query_address_vote_by_epoch_opt(
             ))
             .distinct_on(VoteRecordSchema::address)
             .get_result(conn)
-            .map_err(|e| AppError::DbExecuteFailed(e.to_string()))
+            .map_err(|e| {
+                error!("db operation failed: {}", e.to_string());
+                handle_db_error(e, true)
+            })
     }
 }
 
@@ -129,7 +145,8 @@ pub fn query_epoch_length(conn: &mut PgConnection, epoch_num: i64) -> Result<i64
         .filter(VoteRecordSchema::epochNum.eq(epoch_num))
         .select(VoteRecordSchema::epochLen)
         .first(conn)
-        .optional()
-        .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
-        .ok_or(AppError::VoteNotFound)
+        .map_err(|e| {
+            error!("db operation failed: {}", e.to_string());
+            handle_db_error(e, false)
+        })
 }

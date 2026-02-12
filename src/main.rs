@@ -1,9 +1,10 @@
 use crate::{
     ckb::CkbCtx,
     config::AppConfig,
+    crawl::CrawlManager,
     db::{did::establish_connection, query_latest_height},
     error::AppError,
-    router::{query_address_vote, query_all_votes, query_did_doc, resolve_ckb_addr},
+    router::{query_address_vote, query_all_votes, query_did_doc, resolve_ckb_addr, resolve_did},
 };
 use actix_cors::Cors;
 use actix_files::NamedFile;
@@ -48,7 +49,8 @@ async fn main() -> Result<(), AppError> {
     let pool_for_rolling = pool.clone();
     let mut conn = pool_for_rolling.get().unwrap();
     let mode = config.app_mode.iter().map(|m| m.as_str().into()).collect();
-    let mut ckb_ctx = CkbCtx::init(&mut conn, token, mode).await;
+    let crawl_manager = CrawlManager::new(config.relay_url, config.bearer_auth);
+    let mut ckb_ctx = CkbCtx::init(&mut conn, token, mode, crawl_manager).await;
 
     let task_handle = task::spawn(async move {
         let did_code_hash = H256::from_str(&config.code_hash).unwrap();
@@ -137,6 +139,7 @@ async fn main() -> Result<(), AppError> {
             .service(
                 web::resource("/resolve-ckb-addr/{ckbAddr}").route(web::get().to(resolve_ckb_addr)),
             )
+            .service(web::resource("/resolve-did/{did}").route(web::get().to(resolve_did)))
             .service(web::resource("/all-votes").route(web::get().to(query_all_votes)))
             .service(web::resource("/address-vote").route(web::get().to(query_address_vote)))
             .service(
@@ -166,6 +169,7 @@ async fn main() -> Result<(), AppError> {
 
 mod ckb;
 pub mod config;
+pub mod crawl;
 pub mod db;
 pub mod error;
 pub mod models;

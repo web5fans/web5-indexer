@@ -31,6 +31,13 @@ pub mod indexer {
     }
 
     diesel::table! {
+        indexer.pds_list (pds_url) {
+            pds_url -> Varchar,
+            user_num -> Int8,
+        }
+    }
+
+    diesel::table! {
         indexer.vote_record (txHash, outIndex) {
             address -> Varchar,
             #[max_length = 40]
@@ -51,6 +58,7 @@ pub mod indexer {
     diesel::allow_tables_to_appear_in_same_query!(
         did_delete_record,
         did_record,
+        pds_list,
         vote_record,
     );
 }
