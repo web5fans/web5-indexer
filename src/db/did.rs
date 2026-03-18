@@ -111,6 +111,22 @@ pub fn query_valid_index_set(conn: &mut PgConnection) -> Result<Vec<(String, i32
 }
 
 #[tracing::instrument(skip_all)]
+pub fn query_valid_did_set_until_height(
+    conn: &mut PgConnection,
+    height: i64,
+) -> Result<Vec<(String, String)>, AppError> {
+    DidRecordSchema::did_record
+        .filter(DidRecordSchema::valid.eq(true))
+        .filter(DidRecordSchema::height.le(height))
+        .select((DidRecordSchema::did, DidRecordSchema::ckbAddress))
+        .get_results(conn)
+        .map_err(|e| {
+            error!("db operation failed: {}", e.to_string());
+            handle_db_error(e, true)
+        })
+}
+
+#[tracing::instrument(skip_all)]
 pub fn insert_record(
     conn: &mut PgConnection,
     did: String,

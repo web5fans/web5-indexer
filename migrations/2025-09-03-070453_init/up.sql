@@ -19,7 +19,7 @@ CREATE INDEX record_handle_lower_idx ON indexer.did_record (LOWER(handle));
 CREATE INDEX record_cursor_idx ON indexer.did_record ("txHash", "outIndex");
 
 CREATE TABLE IF NOT EXISTS indexer.did_delete_record (
-    "did" VARCHAR PRIMARY KEY,
+    "did" VARCHAR NOT NULL,
     "ckbAddress" VARCHAR NOT NULL,
     "handle" VARCHAR NOT NULL,
     "signingKey" VARCHAR NOT NULL,
@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS indexer.did_delete_record (
     "inIndex" INT NOT NULL,
     "document" VARCHAR NOT NULL,
     "height" BIGINT NOT NULL,
-    "deletedAt" character varying NOT NULL
+    "deletedAt" character varying NOT NULL,
+    PRIMARY KEY ("txHash", "inIndex")
 );
 
 CREATE INDEX record_handle_lower_idx2 ON indexer.did_delete_record (LOWER(handle));

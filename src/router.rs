@@ -1,6 +1,11 @@
+use std::collections::HashMap;
+
 use crate::{
     db::{
-        did::{DbPool, query_all_did_doc_by_ckb_addr, query_ckb_addr_by_did, query_valid_did_doc},
+        did::{
+            DbPool, query_all_did_doc_by_ckb_addr, query_ckb_addr_by_did, query_valid_did_doc,
+            query_valid_did_set_until_height,
+        },
         vote::{query_address_vote_by_epoch_opt, query_vote_records_by_epoch_opt},
     },
     error::AppError,
@@ -26,6 +31,11 @@ pub struct QueryVoteRecordParams {
 pub struct VoteRecords {
     ckb_address: String,
     vote_index: Vec<Option<i32>>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct QueryDidSetParams {
+    until_height: u64,
 }
 
 pub async fn query_did_doc(path: Path<String>, pool: Data<DbPool>) -> HttpResponse {
@@ -179,5 +189,26 @@ pub async fn query_address_vote(
         HttpResponse::from_error(AppError::VoteParamsError(format!(
             "You must set ckb address."
         )))
+    }
+}
+
+pub async fn query_did_set_until_height(
+    pool: Data<DbPool>,
+    query: Query<QueryDidSetParams>,
+) -> HttpResponse {
+    let query = query.into_inner();
+    info!("[query_did_set_since_height]: query parameters: {query:?}");
+    let mut conn: diesel::r2d2::PooledConnection<
+        diesel::r2d2::ConnectionManager<diesel::PgConnection>,
+    > = pool.get().unwrap();
+    match query_valid_did_set_until_height(&mut conn, query.until_height as i64) {
+        Ok(vec) => {
+            let mut res_map = HashMap::new();
+            for (did, ckb) in vec {
+                res_map.insert(did, ckb);
+            }
+            HttpResponse::Ok().json(res_map)
+        }
+        Err(err) => HttpResponse::from_error(err),
     }
 }

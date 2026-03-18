@@ -4,7 +4,10 @@ use crate::{
     crawl::CrawlManager,
     db::{did::establish_connection, query_latest_height},
     error::AppError,
-    router::{query_address_vote, query_all_votes, query_did_doc, resolve_ckb_addr, resolve_did},
+    router::{
+        query_address_vote, query_all_votes, query_did_doc, query_did_set_until_height,
+        resolve_ckb_addr, resolve_did,
+    },
 };
 use actix_cors::Cors;
 use actix_files::NamedFile;
@@ -142,6 +145,7 @@ async fn main() -> Result<(), AppError> {
             .service(web::resource("/resolve-did/{did}").route(web::get().to(resolve_did)))
             .service(web::resource("/all-votes").route(web::get().to(query_all_votes)))
             .service(web::resource("/address-vote").route(web::get().to(query_address_vote)))
+            .service(web::resource("/did-set").route(web::get().to(query_did_set_until_height)))
             .service(
                 web::resource("/test").to(|req: HttpRequest| match *req.method() {
                     Method::GET => HttpResponse::Ok(),
