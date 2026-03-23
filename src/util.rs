@@ -1,5 +1,6 @@
 use crate::{
     error::AppError,
+    models::DaoRecord,
     molecules::did_cell::{DidWeb5Data, DidWeb5DataUnion},
     types::Web5DocumentData,
 };
@@ -10,6 +11,7 @@ use ckb_types::core::EpochNumberWithFraction;
 use ckb_types::packed::Script;
 use data_encoding::BASE32;
 use molecule::prelude::Entity;
+use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
 pub const RFC3339_F: &str = "%Y-%m-%dT%H:%M:%S%.3fZ";
@@ -104,5 +106,67 @@ pub fn generate_epoch_raw(epoch_num: u64, epoch_inx: u64, epoch_len: u64) -> Res
         Ok((epoch_num
             << EpochNumberWithFraction::INDEX_BITS + EpochNumberWithFraction::LENGTH_BITS)
             | (epoch_inx << (EpochNumberWithFraction::INDEX_BITS * 2 - 1)) / epoch_len)
+    }
+}
+
+pub fn compute_stake_num(dao_records: Vec<DaoRecord>) -> Result<u64, AppError> {
+    let mut i_res: i64 = 0;
+    for record in dao_records {
+        if record.deposit_or_withdraw {
+            i_res = i_res.strict_add(record.ckb_number);
+        } else {
+            i_res = i_res.strict_sub(record.ckb_number);
+        }
+    }
+    if i_res < 0 {
+        Err(AppError::DaoStakeNegError)
+    } else {
+        Ok(i_res as u64)
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Default)]
+pub struct DaoSummary {
+    ckb_address: String,
+    dao_tx_history: Vec<DaoHistory>,
+    sum: i64,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default)]
+pub struct DaoHistory {
+    tx_hash: String,
+    in_index: Option<i32>,
+    out_index: Option<i32>,
+    ckb_number: i64,
+    height: u64,
+}
+
+impl DaoSummary {
+    pub fn generate_from_record(dao_records: &[DaoRecord]) -> Result<Self, AppError> {
+        let mut summary = Self::default();
+        for record in dao_records {
+            if summary.ckb_address.is_empty() {
+                summary.ckb_address = record.ckb_address.clone();
+            } else if record.ckb_address != summary.ckb_address {
+                return Err(AppError::RunTimeError(format!(
+                    "dao record addr({}) not equal with summary address({})",
+                    record.ckb_address, summary.ckb_address
+                )));
+            }
+            let num = if record.deposit_or_withdraw {
+                record.ckb_number
+            } else {
+                -record.ckb_number
+            };
+            summary.dao_tx_history.push(DaoHistory {
+                tx_hash: record.tx_hash.clone(),
+                in_index: record.in_index,
+                out_index: record.out_index,
+                ckb_number: num,
+                height: record.height as u64,
+            });
+            summary.sum = summary.sum.strict_add(num);
+        }
+        Ok(summary)
     }
 }

@@ -2,6 +2,22 @@
 
 pub mod indexer {
     diesel::table! {
+        indexer.dao_record (id) {
+            id -> Int8,
+            ckbAddress -> Varchar,
+            txHash -> Varchar,
+            outIndex -> Nullable<Int4>,
+            inIndex -> Nullable<Int4>,
+            ckbNumber -> Int8,
+            depositOrWithdraw -> Bool,
+            height -> Int8,
+            txIndex -> Int4,
+            createdAt -> Varchar,
+            valid -> Bool,
+        }
+    }
+
+    diesel::table! {
         indexer.did_delete_record (did) {
             did -> Varchar,
             ckbAddress -> Varchar,
@@ -56,6 +72,7 @@ pub mod indexer {
     }
 
     diesel::allow_tables_to_appear_in_same_query!(
+        dao_record,
         did_delete_record,
         did_record,
         pds_list,

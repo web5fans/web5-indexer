@@ -12,6 +12,7 @@ pub struct AppConfig {
     pub start_height: u64,
     pub code_hash: String,
     pub vote_code_hash: String,
+    pub dao_code_hash: String,
     pub app_mode: Vec<String>,
     pub relay_url: Option<String>,
     pub bearer_auth: Option<String>,
@@ -35,6 +36,9 @@ impl AppConfig {
             ),
             vote_code_hash: env::var("VOTE_CODE_HASH").unwrap_or(
                 "b140de2d7d1536cfdcb82da7520475edce5785dff90edae9073c1143d88f50c5".into(),
+            ),
+            dao_code_hash: env::var("DAO_CODE_HASH").unwrap_or(
+                "82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e".into(),
             ),
             app_mode: match env::var("APP_MODE") {
                 Ok(value) => value

@@ -5,8 +5,8 @@ use crate::{
     db::{did::establish_connection, query_latest_height},
     error::AppError,
     router::{
-        query_address_vote, query_all_votes, query_did_doc, query_did_set_until_height,
-        resolve_ckb_addr, resolve_did,
+        query_address_vote, query_all_votes, query_dao_stake_history, query_dao_stake_until_height,
+        query_did_doc, query_did_set_until_height, resolve_ckb_addr, resolve_did,
     },
 };
 use actix_cors::Cors;
@@ -58,6 +58,7 @@ async fn main() -> Result<(), AppError> {
     let task_handle = task::spawn(async move {
         let did_code_hash = H256::from_str(&config.code_hash).unwrap();
         let vote_code_hash = H256::from_str(&config.vote_code_hash).unwrap();
+        let dao_code_hash = H256::from_str(&config.dao_code_hash).unwrap();
         let client = CkbRpcAsyncClient::new(&config.ckb_node);
         let mut is_sync = true;
         let start_height = config.start_height;
@@ -101,6 +102,7 @@ async fn main() -> Result<(), AppError> {
                     network_type,
                     &did_code_hash,
                     &vote_code_hash,
+                    &dao_code_hash,
                     is_sync,
                 ) => {
                     match res {
@@ -146,6 +148,12 @@ async fn main() -> Result<(), AppError> {
             .service(web::resource("/all-votes").route(web::get().to(query_all_votes)))
             .service(web::resource("/address-vote").route(web::get().to(query_address_vote)))
             .service(web::resource("/did-set").route(web::get().to(query_did_set_until_height)))
+            .service(
+                web::resource("/dao-stake-set").route(web::get().to(query_dao_stake_until_height)),
+            )
+            .service(
+                web::resource("/dao-stake-history").route(web::get().to(query_dao_stake_history)),
+            )
             .service(
                 web::resource("/test").to(|req: HttpRequest| match *req.method() {
                     Method::GET => HttpResponse::Ok(),

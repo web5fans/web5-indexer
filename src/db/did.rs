@@ -56,6 +56,7 @@ pub fn query_all_did_doc_by_ckb_addr(
     let did_records = DidRecordSchema::did_record
         .filter(DidRecordSchema::ckbAddress.eq(ckb_addr.to_lowercase().clone()))
         .filter(DidRecordSchema::valid.eq(true))
+        .order(DidRecordSchema::height.desc())
         .select(models::DidRecord::as_select())
         .get_results(conn)
         .optional()

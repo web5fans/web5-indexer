@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     db::{
+        dao::query_valid_dao_records_by_addr,
         did::{
             DbPool, query_all_did_doc_by_ckb_addr, query_ckb_addr_by_did, query_valid_did_doc,
             query_valid_did_set_until_height,
@@ -9,7 +10,7 @@ use crate::{
         vote::{query_address_vote_by_epoch_opt, query_vote_records_by_epoch_opt},
     },
     error::AppError,
-    util::{check_did_str, extract_core_did, generate_epoch_raw},
+    util::{DaoSummary, check_did_str, compute_stake_num, extract_core_did, generate_epoch_raw},
 };
 use actix_web::{
     HttpResponse,
@@ -36,6 +37,18 @@ pub struct VoteRecords {
 #[derive(Deserialize, Debug, Default)]
 pub struct QueryDidSetParams {
     until_height: u64,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct QueryDaoStakeParams {
+    until_height: u64,
+    ckb_list: String,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct QueryDaoTxHistoryParams {
+    until_height: u64,
+    ckb_address: String,
 }
 
 pub async fn query_did_doc(path: Path<String>, pool: Data<DbPool>) -> HttpResponse {
@@ -209,6 +222,74 @@ pub async fn query_did_set_until_height(
             }
             HttpResponse::Ok().json(res_map)
         }
+        Err(err) => HttpResponse::from_error(err),
+    }
+}
+
+pub async fn query_dao_stake_until_height(
+    pool: Data<DbPool>,
+    query: Query<QueryDaoStakeParams>,
+) -> HttpResponse {
+    let query = query.into_inner();
+    info!("[query_dao_stake_until_height]: query parameters: {query:?}");
+    let mut conn: diesel::r2d2::PooledConnection<
+        diesel::r2d2::ConnectionManager<diesel::PgConnection>,
+    > = pool.get().unwrap();
+    let mut res_map = HashMap::new();
+    let ckb_list: Vec<_> = query.ckb_list.split(",").collect();
+    if ckb_list.len() > 20 {
+        return HttpResponse::from_error(AppError::DaoStakeOverLimitError);
+    }
+    for ckb_addr in ckb_list {
+        match query_valid_dao_records_by_addr(&mut conn, ckb_addr, query.until_height as i64) {
+            Ok(dao_records) => {
+                match compute_stake_num(dao_records) {
+                    Ok(num) => res_map.insert(ckb_addr, num),
+                    Err(err) => {
+                        error!(
+                            "[query_dao_stake_until_height]: calculate {ckb_addr} error: {}",
+                            err.to_string()
+                        );
+                        return HttpResponse::from_error(AppError::RunTimeError(format!(
+                            "calculate {ckb_addr} error: {}",
+                            err.to_string()
+                        )));
+                    }
+                };
+            }
+            Err(err) => return HttpResponse::from_error(err),
+        }
+    }
+    HttpResponse::Ok().json(res_map)
+}
+
+pub async fn query_dao_stake_history(
+    pool: Data<DbPool>,
+    query: Query<QueryDaoTxHistoryParams>,
+) -> HttpResponse {
+    let query = query.into_inner();
+    info!("[query_dao_stake_history]: query parameters: {query:?}");
+    let mut conn: diesel::r2d2::PooledConnection<
+        diesel::r2d2::ConnectionManager<diesel::PgConnection>,
+    > = pool.get().unwrap();
+
+    match query_valid_dao_records_by_addr(&mut conn, &query.ckb_address, query.until_height as i64)
+    {
+        Ok(dao_records) => match DaoSummary::generate_from_record(&dao_records) {
+            Ok(summary) => HttpResponse::Ok().json(summary),
+            Err(err) => {
+                error!(
+                    "[query_dao_stake_history]: generate summary {} error: {}",
+                    query.ckb_address,
+                    err.to_string()
+                );
+                HttpResponse::from_error(AppError::RunTimeError(format!(
+                    "generate summary {} error: {}",
+                    query.ckb_address,
+                    err.to_string()
+                )))
+            }
+        },
         Err(err) => HttpResponse::from_error(err),
     }
 }

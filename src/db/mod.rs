@@ -1,7 +1,8 @@
 use crate::ckb::AppMode;
 use crate::error::AppError;
 use crate::schema::indexer::{
-    did_record::dsl as DidRecordSchema, vote_record::dsl as VoteRecordSchema,
+    dao_record::dsl as DaoRecordSchema, did_record::dsl as DidRecordSchema,
+    vote_record::dsl as VoteRecordSchema,
 };
 use diesel::pg::PgConnection;
 use diesel::query_dsl::methods::{OrderDsl, SelectDsl};
@@ -33,11 +34,20 @@ pub fn query_latest_height(conn: &mut PgConnection, modes: &[AppMode]) -> Result
         0
     };
 
-    if did_height >= vote_height {
-        Ok(did_height)
+    let dao_height = if modes.contains(&AppMode::DAO) {
+        DaoRecordSchema::dao_record
+            .order(DaoRecordSchema::height.desc())
+            .select(DaoRecordSchema::height)
+            .first(conn)
+            .optional()
+            .map_err(|e| AppError::DbExecuteFailed(e.to_string()))?
+            .ok_or(AppError::CountNotFound)?
     } else {
-        Ok(vote_height)
-    }
+        0
+    };
+
+    info!("did_height: {did_height}, vote_height: {vote_height}, dao_height: {dao_height}");
+    Ok(did_height.max(vote_height).max(dao_height))
 }
 
 fn handle_db_error(err: DsError, qon: bool) -> AppError {
@@ -53,6 +63,7 @@ fn handle_db_error(err: DsError, qon: bool) -> AppError {
     }
 }
 
+pub mod dao;
 pub mod did;
 pub mod pds;
 pub mod vote;

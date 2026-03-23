@@ -39,6 +39,10 @@ pub enum AppError {
     PdsUrlError(String),
     #[display("Relay Http request error: {_0}")]
     RelayHttpError(String),
+    #[display("Dao stake' sum is negative")]
+    DaoStakeNegError,
+    #[display("Dao stake's query list size must <= 20")]
+    DaoStakeOverLimitError,
 }
 
 impl ResponseError for AppError {
@@ -61,6 +65,8 @@ impl ResponseError for AppError {
             AppError::VoteParamsError(_) => (500, self.to_string()),
             AppError::RelayHttpError(_) => (500, self.to_string()),
             AppError::PdsUrlError(_) => (500, self.to_string()),
+            AppError::DaoStakeNegError => (500, self.to_string()),
+            AppError::DaoStakeOverLimitError => (500, self.to_string()),
         };
         let error_response = ErrorResponse { message: error_msg };
 

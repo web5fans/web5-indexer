@@ -9,6 +9,60 @@ use serde_derive::{Deserialize, Serialize};
 #[derive(
     Queryable, Identifiable, Selectable, Clone, Debug, PartialEq, Default, Serialize, Deserialize,
 )]
+#[diesel(primary_key(id))]
+#[diesel(table_name = crate::schema::indexer::dao_record)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[serde(rename_all = "camelCase")]
+pub struct DaoRecord {
+    pub id: i64,
+    #[diesel(column_name = "ckbAddress")]
+    pub ckb_address: String,
+    #[diesel(column_name = "txHash")]
+    pub tx_hash: String,
+    #[diesel(column_name = "outIndex")]
+    pub out_index: Option<i32>,
+    #[diesel(column_name = "inIndex")]
+    pub in_index: Option<i32>,
+    #[diesel(column_name = "ckbNumber")]
+    pub ckb_number: i64,
+    #[diesel(column_name = "depositOrWithdraw")]
+    pub deposit_or_withdraw: bool,
+    pub height: i64,
+    #[diesel(column_name = "txIndex")]
+    pub tx_index: i32,
+    #[diesel(column_name = "createdAt")]
+    pub created_at: String,
+    pub valid: bool,
+}
+
+#[derive(Insertable, Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+#[diesel(table_name = crate::schema::indexer::dao_record)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[serde(rename_all = "camelCase")]
+pub struct NewDaoRecord {
+    #[diesel(column_name = "ckbAddress")]
+    pub ckb_address: String,
+    #[diesel(column_name = "txHash")]
+    pub tx_hash: String,
+    #[diesel(column_name = "outIndex")]
+    pub out_index: Option<i32>,
+    #[diesel(column_name = "inIndex")]
+    pub in_index: Option<i32>,
+    #[diesel(column_name = "ckbNumber")]
+    pub ckb_number: i64,
+    #[diesel(column_name = "depositOrWithdraw")]
+    pub deposit_or_withdraw: bool,
+    pub height: i64,
+    #[diesel(column_name = "txIndex")]
+    pub tx_index: i32,
+    #[diesel(column_name = "createdAt")]
+    pub created_at: String,
+    pub valid: bool,
+}
+
+#[derive(
+    Queryable, Identifiable, Selectable, Clone, Debug, PartialEq, Default, Serialize, Deserialize,
+)]
 #[diesel(primary_key(did))]
 #[diesel(table_name = crate::schema::indexer::did_delete_record)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -113,15 +167,7 @@ pub struct NewVoteRecord {
 }
 
 #[derive(
-    Queryable,
-    Identifiable,
-    Selectable,
-    Clone,
-    Debug,
-    PartialEq,
-    Default,
-    Serialize,
-    Deserialize,
+    Queryable, Identifiable, Selectable, Clone, Debug, PartialEq, Default, Serialize, Deserialize,
 )]
 #[diesel(table_name = crate::schema::indexer::pds_list)]
 #[diesel(check_for_backend(diesel::pg::Pg))]

@@ -1,6 +1,7 @@
 use crate::{
     crawl::CrawlManager,
     db::{
+        dao::{insert_dao_record, query_valid_dao_record_by_output},
         did::{
             check_connection, delete_record, insert_record, query_valid_did_doc_by_index,
             query_valid_index_set,
@@ -9,7 +10,7 @@ use crate::{
         vote::insert_vote_record,
     },
     error::{AppError, handle_error},
-    models::{self, PdsList},
+    models::{self, NewDaoRecord, PdsList},
     molecules::did_cell::{Bytes, DidWeb5Data, DidWeb5DataUnion},
     types::Web5DocumentData,
     util::{
@@ -33,6 +34,7 @@ use url::Url;
 pub enum AppMode {
     DID,
     VOTE,
+    DAO,
 }
 
 impl From<&str> for AppMode {
@@ -40,16 +42,23 @@ impl From<&str> for AppMode {
         match value {
             "did" | "DID" => Self::DID,
             "vote" | "VOTE" => Self::VOTE,
+            "dao" | "DAO" => Self::DAO,
             _ => {
-                panic!("The mode only can be did or vote")
+                panic!("The mode only can be did, vote or dao")
             }
         }
     }
 }
 
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CellType {
+    Did,
+    Dao,
+}
+
 #[derive(Default)]
 pub struct CkbCtx {
-    valid_cells: HashSet<(H256, i32)>,
+    valid_cells: HashSet<(H256, i32, CellType)>,
     pub token: CancellationToken,
     pub mode: Vec<AppMode>,
     pub crawl_manager: CrawlManager,
@@ -90,7 +99,8 @@ impl CkbCtx {
         let live_cells = query_valid_index_set(conn).unwrap();
         info!("Ckb Ctx init. Found {} records", live_cells.len());
         for (str, idx) in live_cells {
-            ctx.valid_cells.insert((H256::from_str(&str).unwrap(), idx));
+            ctx.valid_cells
+                .insert((H256::from_str(&str).unwrap(), idx, CellType::Did));
         }
         ctx
     }
@@ -103,6 +113,7 @@ impl CkbCtx {
         network: NetworkType,
         did_code_hash: &H256,
         vote_code_hash: &H256,
+        dao_code_hash: &H256,
         mut is_sync: bool,
     ) -> Result<RollingResult, AppError> {
         trace!("Tracing scanning block #{query_height}");
@@ -127,28 +138,38 @@ impl CkbCtx {
                 }
                 let header = block.header.inner;
                 for (tx_index, tx) in block.transactions.into_iter().enumerate() {
-                    for (in_index, input) in tx.inner.inputs.into_iter().enumerate() {
+                    for (in_index, input) in tx.inner.inputs.iter().enumerate() {
                         if self.mode.contains(&AppMode::DID) {
                             self.did_input_handle(
                                 conn,
                                 in_index as i32,
-                                &input,
+                                input,
                                 header.timestamp.value(),
                                 tx.hash.to_string(),
                                 query_height as i64,
                             )
                             .await?;
                         }
+                        // if self.mode.contains(&AppMode::DAO) {
+                        //     self.dao_input_handle(
+                        //         conn,
+                        //         in_index as i32,
+                        //         input,
+                        //         header.timestamp.value(),
+                        //         tx.hash.to_string(),
+                        //         query_height as i64,
+                        //         tx_index as i32,
+                        //     )?;
+                        // }
                     }
-
-                    for (out_inx, output) in tx.inner.outputs.into_iter().enumerate() {
+                    for (out_inx, output) in tx.inner.outputs.iter().enumerate() {
                         if self.mode.contains(&AppMode::DID) {
                             self.did_output_handle(
                                 conn,
                                 &did_code_hash,
                                 &tx.inner.outputs_data,
                                 out_inx as i32,
-                                &output,
+                                output,
                                 header.timestamp.value(),
                                 tx.hash.clone(),
                                 query_height as i64,
@@ -162,13 +183,28 @@ impl CkbCtx {
                                 &vote_code_hash,
                                 &tx.inner.outputs_data,
                                 out_inx as i32,
-                                &output,
+                                output,
                                 header.epoch,
                                 header.timestamp.value(),
                                 tx_index as i32,
                                 tx.hash.clone(),
                                 query_height as i64,
                                 network,
+                            )?;
+                        }
+                        if self.mode.contains(&AppMode::DAO) {
+                            self.dao_output_handle(
+                                conn,
+                                &dao_code_hash,
+                                &tx.inner.outputs_data,
+                                out_inx as i32,
+                                output,
+                                header.timestamp.value(),
+                                tx_index as i32,
+                                tx.hash.clone(),
+                                query_height as i64,
+                                network,
+                                &tx.inner.inputs,
                             )?;
                         }
                     }
@@ -210,7 +246,10 @@ impl CkbCtx {
     ) -> Result<(), AppError> {
         let pre_tx_hash = input.previous_output.tx_hash.clone();
         let pre_index = input.previous_output.index.value() as i32;
-        if self.valid_cells.contains(&(pre_tx_hash.clone(), pre_index)) {
+        if self
+            .valid_cells
+            .contains(&(pre_tx_hash.clone(), pre_index, CellType::Did))
+        {
             let did_record =
                 match query_valid_did_doc_by_index(conn, pre_tx_hash.to_string(), pre_index) {
                     Ok(data) => data,
@@ -257,7 +296,8 @@ impl CkbCtx {
                             did_record.handle, did_record.document
                         )
                     }
-                    self.valid_cells.remove(&(pre_tx_hash, pre_index));
+                    self.valid_cells
+                        .remove(&(pre_tx_hash, pre_index, CellType::Did));
                 }
             };
         }
@@ -336,7 +376,8 @@ impl CkbCtx {
                                 didoc.also_known_as[0]
                             );
                         }
-                        self.valid_cells.insert((tx_hash, out_inx as i32));
+                        self.valid_cells
+                            .insert((tx_hash, out_inx as i32, CellType::Did));
                     }
                 }
             }
@@ -419,6 +460,167 @@ impl CkbCtx {
                             tx_hash.to_string(),
                             out_index
                         );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn dao_input_handle(
+        &mut self,
+        conn: &mut PgConnection,
+        in_index: i32,
+        input: &CellInput,
+        time_stamp: u64,
+        tx_hash: String,
+        block_height: i64,
+        tx_index: i32,
+    ) -> Result<(), AppError> {
+        let pre_tx_hash = input.previous_output.tx_hash.clone();
+        let pre_index = input.previous_output.index.value() as i32;
+        if self
+            .valid_cells
+            .contains(&(pre_tx_hash.clone(), pre_index, CellType::Dao))
+        {
+            let dao_record =
+                query_valid_dao_record_by_output(conn, &pre_tx_hash.to_string(), pre_index)?;
+            match insert_dao_record(
+                conn,
+                NewDaoRecord {
+                    ckb_address: dao_record.ckb_address,
+                    tx_hash: tx_hash,
+                    out_index: None,
+                    in_index: Some(in_index),
+                    ckb_number: dao_record.ckb_number,
+                    deposit_or_withdraw: false,
+                    height: block_height,
+                    tx_index,
+                    created_at: transfer_time(time_stamp),
+                    valid: true,
+                },
+            ) {
+                Err(app_err) => {
+                    error!("[did]: delete_record failed: {}", app_err.to_string());
+                    handle_error(app_err)?;
+                }
+                Ok(_) => {
+                    self.valid_cells
+                        .remove(&(pre_tx_hash, pre_index, CellType::Dao));
+                }
+            };
+        }
+        Ok(())
+    }
+
+    pub fn dao_output_handle(
+        &mut self,
+        conn: &mut PgConnection,
+        dao_code_hash: &H256,
+        outputs_data: &Vec<JsonBytes>,
+        out_inx: i32,
+        output: &CellOutput,
+        time_stamp: u64,
+        tx_index: i32,
+        tx_hash: H256,
+        block_height: i64,
+        network: NetworkType,
+        inputs: &[CellInput],
+    ) -> Result<(), AppError> {
+        if let Some(ref type_script) = output.type_ {
+            if &type_script.code_hash == dao_code_hash {
+                let ckb_addr = calculate_address(&output.lock.clone().into(), network);
+                match outputs_data.get(out_inx as usize) {
+                    Some(out_data) => {
+                        let cell_data = out_data.as_bytes();
+                        if cell_data != &[0; 8] {
+                            if cell_data.len() == 8 {
+                                for (in_index, input) in inputs.iter().enumerate() {
+                                    let pre_tx_hash = input.previous_output.tx_hash.clone();
+                                    let pre_index = input.previous_output.index.value() as i32;
+                                    if let Ok(dao_record) = query_valid_dao_record_by_output(
+                                        conn,
+                                        &pre_tx_hash.to_string(),
+                                        pre_index,
+                                    ) {
+                                        match insert_dao_record(
+                                            conn,
+                                            NewDaoRecord {
+                                                ckb_address: dao_record.ckb_address,
+                                                tx_hash: tx_hash.to_string(),
+                                                out_index: None,
+                                                in_index: Some(in_index as i32),
+                                                ckb_number: dao_record.ckb_number,
+                                                deposit_or_withdraw: false,
+                                                height: block_height,
+                                                tx_index,
+                                                created_at: transfer_time(time_stamp),
+                                                valid: true,
+                                            },
+                                        ) {
+                                            Err(app_err) => {
+                                                error!(
+                                                    "[dao]: insert_dao_record failed: {}",
+                                                    app_err.to_string()
+                                                );
+                                                handle_error(app_err)?;
+                                            }
+                                            Ok(_) => {
+                                                // self.valid_cells.remove(&(
+                                                //     pre_tx_hash,
+                                                //     pre_index,
+                                                //     CellType::Dao,
+                                                // ));
+                                            }
+                                        }
+                                    }
+                                }
+                                error!(
+                                    "[dao]: tx({}) not found any dao inputs",
+                                    tx_hash.to_string(),
+                                );
+                            }
+                        } else {
+                            match insert_dao_record(
+                                conn,
+                                NewDaoRecord {
+                                    ckb_address: ckb_addr.to_string(),
+                                    tx_hash: tx_hash.to_string(),
+                                    out_index: Some(out_inx),
+                                    in_index: None,
+                                    ckb_number: output.capacity.value() as i64,
+                                    deposit_or_withdraw: true,
+                                    height: block_height,
+                                    tx_index,
+                                    created_at: transfer_time(time_stamp),
+                                    valid: true,
+                                },
+                            ) {
+                                Err(app_err) => {
+                                    error!(
+                                        "[dao]: insert_dao_record failed: {}",
+                                        app_err.to_string()
+                                    );
+                                    handle_error(app_err)?;
+                                }
+                                Ok(_) => {
+                                    // self.valid_cells.insert((
+                                    //     tx_hash,
+                                    //     out_inx,
+                                    //     CellType::Dao,
+                                    // ));
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        error!(
+                            "[dao]: tx({}) index({}) out data not found",
+                            tx_hash.to_string(),
+                            out_inx
+                        );
+                        return Ok(());
                     }
                 }
             }
