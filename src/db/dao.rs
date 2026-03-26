@@ -51,7 +51,7 @@ pub fn query_valid_dao_records_by_addr(
     DaoRecordSchema::dao_record
         .filter(DaoRecordSchema::ckbAddress.eq(ckb_addr))
         .filter(DaoRecordSchema::valid.eq(true))
-        .filter(DaoRecordSchema::height.lt(height))
+        .filter(DaoRecordSchema::height.le(height))
         .select(models::DaoRecord::as_select())
         .get_results(conn)
         .map_err(|e| AppError::DbExecuteFailed(e.to_string()))
