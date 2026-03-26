@@ -5,8 +5,10 @@ use crate::{
     db::{did::establish_connection, query_latest_height},
     error::AppError,
     router::{
-        query_address_vote, query_all_votes, query_dao_stake_history, query_dao_stake_until_height,
-        query_did_doc, query_did_set_until_height, resolve_ckb_addr, resolve_did,
+        QueryDaoStakeParams, QueryDaoTxHistoryParams, QueryDidSetParams, QueryVoteRecordParams,
+        VoteRecords, query_address_vote, query_all_votes, query_dao_stake_history,
+        query_dao_stake_until_height, query_did_doc, query_did_set_until_height, resolve_ckb_addr,
+        resolve_did,
     },
 };
 use actix_cors::Cors;
@@ -23,9 +25,44 @@ use tokio::{select, signal::ctrl_c, task};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[macro_use]
 extern crate tracing;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        router::resolve_did,
+        router::resolve_ckb_addr,
+        router::query_did_doc,
+        router::query_all_votes,
+        router::query_address_vote,
+        router::query_did_set_until_height,
+        router::query_dao_stake_until_height,
+        router::query_dao_stake_history,
+    ),
+    components(
+        schemas(
+            QueryVoteRecordParams,
+            VoteRecords,
+            QueryDidSetParams,
+            QueryDaoStakeParams,
+            QueryDaoTxHistoryParams,
+            router::ErrorResponse,
+            router::DaoStakeResponse,
+            router::DaoSummaryResponse,
+            router::DidSetResponse,
+        )
+    ),
+    tags(
+        (name = "DID", description = "DID resolution endpoints"),
+        (name = "Vote", description = "Vote query endpoints"),
+        (name = "DAO", description = "DAO stake endpoints"),
+    ),
+)]
+struct ApiDoc;
 
 async fn default_handler(req_method: Method) -> Result<impl Responder> {
     match req_method {
@@ -136,10 +173,14 @@ async fn main() -> Result<(), AppError> {
             .wrap(middleware::Logger::default().log_target("@"))
             .wrap(
                 Cors::default()
-                    .allowed_methods(vec!["GET"])
+                    .allowed_methods(vec!["GET", "POST"])
                     .allow_any_origin()
                     .send_wildcard()
                     .max_age(3600),
+            )
+            .service(
+                SwaggerUi::new("/swagger-ui/{_:.*}")
+                    .url("/api-docs/openapi.json", ApiDoc::openapi()),
             )
             .service(
                 web::resource("/resolve-ckb-addr/{ckbAddr}").route(web::get().to(resolve_ckb_addr)),
@@ -149,7 +190,7 @@ async fn main() -> Result<(), AppError> {
             .service(web::resource("/address-vote").route(web::get().to(query_address_vote)))
             .service(web::resource("/did-set").route(web::get().to(query_did_set_until_height)))
             .service(
-                web::resource("/dao-stake-set").route(web::get().to(query_dao_stake_until_height)),
+                web::resource("/dao-stake-set").route(web::post().to(query_dao_stake_until_height)),
             )
             .service(
                 web::resource("/dao-stake-history").route(web::get().to(query_dao_stake_history)),
