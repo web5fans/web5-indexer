@@ -536,6 +536,7 @@ impl CkbCtx {
                         let cell_data = out_data.as_bytes();
                         if cell_data != &[0; 8] {
                             if cell_data.len() == 8 {
+                                let mut found_input = false;
                                 for (in_index, input) in inputs.iter().enumerate() {
                                     let pre_tx_hash = input.previous_output.tx_hash.clone();
                                     let pre_index = input.previous_output.index.value() as i32;
@@ -544,6 +545,7 @@ impl CkbCtx {
                                         &pre_tx_hash.to_string(),
                                         pre_index,
                                     ) {
+                                        found_input = true;
                                         match insert_dao_record(
                                             conn,
                                             NewDaoRecord {
@@ -576,9 +578,14 @@ impl CkbCtx {
                                         }
                                     }
                                 }
+                                if !found_input {
+                                    error!("[dao]: tx({}) data invalid", tx_hash.to_string(),);
+                                }
+                            } else {
                                 error!(
-                                    "[dao]: tx({}) not found any dao inputs",
+                                    "[dao]: tx({}) out_index({}) not found any dao inputs",
                                     tx_hash.to_string(),
+                                    out_inx
                                 );
                             }
                         } else {
